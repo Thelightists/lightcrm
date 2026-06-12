@@ -280,11 +280,11 @@ export default function LightCRM() {
         {tab==="dashboard"  && <Dashboard projects={projects} leads={leads} tasks={tasks} alerts={alerts} activeLeads={activeLeads} overdueFollowups={overdueFollowups} inTransit={inTransit} pendingPayments={pendingPayments} setDrawerProject={setDrawerProject} setTab={setTab} currentUser={currentUser} onCompleteTask={id=>setTasks(ts=>ts.map(t=>t.id===id?{...t,status:"Done"}:t))}/>}
         {tab==="projects"   && <ProjectsTab projects={projects} setDrawerProject={setDrawerProject} currentUser={currentUser} setModal={setModal} setProjects={setProjects}/>}
         {tab==="leads"      && <LeadsTab leads={leads} currentUser={currentUser} setModal={setModal} setLeads={setLeads}/>}
-        {tab==="quotations" && <QuotationsTab quotations={quotations} projects={projects} setQuotations={setQuotations}/>}
-        {tab==="orders"     && <OrdersTab orders={orders} projects={projects} setOrders={setOrders}/>}
-        {tab==="payments"   && canSeePayments(currentUser) && <PaymentsTab payments={payments} orders={orders} setPayments={setPayments} currentUser={currentUser}/>}
-        {tab==="delivery"   && <DeliveryTab projects={projects}/>}
-        {tab==="tasks"      && <TasksTab tasks={tasks} projects={projects} currentUser={currentUser} setTasks={setTasks} setModal={setModal}/>}
+        {tab==="quotations" && <QuotationsTab quotations={quotations} projects={projects} setQuotations={setQuotations} setModal={setModal} setDrawerProject={setDrawerProject}/>}
+        {tab==="orders"     && <OrdersTab orders={orders} projects={projects} setOrders={setOrders} setModal={setModal} setDrawerProject={setDrawerProject}/>}
+        {tab==="payments"   && canSeePayments(currentUser) && <PaymentsTab payments={payments} orders={orders} setPayments={setPayments} currentUser={currentUser} setModal={setModal}/>}
+        {tab==="delivery"   && <DeliveryTab projects={projects} tasks={tasks} setDrawerProject={setDrawerProject}/>}
+        {tab==="tasks"      && <TasksTab tasks={tasks} projects={projects} leads={leads} currentUser={currentUser} setTasks={setTasks} setModal={setModal} setDrawerProject={setDrawerProject}/>}
         {tab==="team"       && canAdmin && <TeamTab currentUser={currentUser}/>}
       </div>
 
@@ -294,17 +294,15 @@ export default function LightCRM() {
           project={projects.find(p=>p.id===drawerProject)}
           tasks={tasks} currentUser={currentUser}
           onClose={()=>setDrawerProject(null)}
-          onAdvanceStage={(pid,comment)=>setProjects(ps=>ps.map(p=>{
+          onChangeStage={(pid,newStage,comment)=>setProjects(ps=>ps.map(p=>{
             if(p.id!==pid)return p;
-            const ni=STAGES.indexOf(p.stage)+1;
-            if(ni>=STAGES.length)return p;
-            const ns=STAGES[ni];
-            return{...p,stage:ns,lastUpdated:today(),
-              stageHistory:[...p.stageHistory,{stage:ns,date:today(),by:currentUser.name}],
-              comments:[...p.comments,{by:currentUser.name,date:today(),text:comment}]};
+            return{...p,stage:newStage,lastUpdated:today(),
+              stageHistory:[...p.stageHistory,{stage:newStage,date:today(),by:currentUser.name}],
+              comments:[...p.comments,{by:currentUser.name,date:today(),text:`Stage changed to: ${newStage}. ${comment}`}]};
           }))}
-          onAddComment={(pid,text)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,comments:[...p.comments,{by:currentUser.name,date:today(),text}]}))}
-          onUpdateDriveLink={(pid,link)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,driveLink:link}))}
+          onAddComment={(pid,text,byName)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,comments:[...p.comments,{by:byName||currentUser.name,date:today(),text}]}))}
+          onUpdateDriveLinks={(pid,links)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,driveLinks:links,driveLink:links[0]||""}))}
+          onAddTask={(task)=>setTasks(ts=>[...ts,task])}
         />
       )}
 
@@ -312,8 +310,9 @@ export default function LightCRM() {
       {modal&&(
         <Modal modal={modal} projects={projects} currentUser={currentUser} onClose={()=>setModal(null)}
           onSaveTask={task=>{setTasks(ts=>[...ts,{...task,id:uid("T")}]);setModal(null);}}
-          onSaveProject={proj=>{setProjects(ps=>[...ps,{...proj,id:uid("P"),stageHistory:[{stage:"Lead",date:today(),by:currentUser.name}],comments:[],driveLink:"",lastUpdated:today()}]);setModal(null);}}
+          onSaveProject={proj=>{setProjects(ps=>[...ps,{...proj,id:uid("P"),comments:[],driveLink:proj.driveLink||"",lastUpdated:today(),stageHistory:proj.stageHistory||[{stage:proj.stage,date:today(),by:currentUser.name}]}]);setModal(null);}}
           onSaveLead={lead=>{setLeads(ls=>[...ls,{...lead,id:uid("L"),comments:[]}]);setModal(null);}}
+          onModalSave={item=>{if(modal.onSave){modal.onSave(item);}setModal(null);}}
         />
       )}
     </div>
@@ -449,7 +448,7 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
 }
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
-function ProjectsTab({projects,setDrawerProject,currentUser,setModal}){
+function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects}){
   const [filter,setFilter]=useState("all");
   const filtered=filter==="all"?projects:projects.filter(p=>p.stage===filter);
   return(
@@ -464,7 +463,7 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal}){
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
-            {["Client","Stage","Value","Drive","Assigned To","Last Updated","Follow-up"].map(h=>(
+            {["Client","Stage","Value","Drive","Assigned To","Last Updated","Follow-up",""].map(h=>(
               <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px"}}>{h}</th>
             ))}
           </tr></thead>
@@ -486,6 +485,11 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal}){
                   </td>
                   <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",color:"#666",cursor:"pointer"}}>{p.lastUpdated}</td>
                   <td style={{padding:"12px 14px"}}>{p.followUpDate?<span style={{color:overdue?"#c0392b":"#2d6a4f",fontWeight:600}}>{overdue?"🔴 ":""}{p.followUpDate}</span>:<span style={{color:"#ccc"}}>—</span>}</td>
+                  <td style={{padding:"8px 8px"}}>
+                    <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete project "${p.client}"? This cannot be undone.`))setProjects(ps=>ps.filter(x=>x.id!==p.id));}}
+                      title="Delete project"
+                      style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:"#c0392b",fontFamily:"inherit"}}>🗑</button>
+                  </td>
                 </tr>
               );
             })}
@@ -500,23 +504,86 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal}){
 function LeadsTab({leads,currentUser,setModal,setLeads}){
   const [expanded,setExpanded]=useState(null);
   const [editing,setEditing]=useState({});
+  const [statusFilter,setStatusFilter]=useState("active");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
   const updateLead=(id,patch)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,...patch}:l));
   const addComment=(id,text)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,comments:[...(l.comments||[]),{by:currentUser.name,date:today(),text}]}:l));
+
+  // Determine lead status from meetingStatus field
+  const getLeadStatus = (l) => {
+    if (l.leadStatus) return l.leadStatus; // explicit override
+    if (l.meetingStatus === "Converted") return "converted";
+    if (l.meetingStatus === "Dead" || l.leadStatus === "dead") return "dead";
+    return "active";
+  };
+
+  const filtered = leads.filter(l => {
+    const s = getLeadStatus(l);
+    if (statusFilter === "active") return s === "active";
+    if (statusFilter === "converted") return s === "converted";
+    if (statusFilter === "dead") return s === "dead";
+    return true;
+  });
+
+  const counts = {
+    all: leads.length,
+    active: leads.filter(l=>getLeadStatus(l)==="active").length,
+    converted: leads.filter(l=>getLeadStatus(l)==="converted").length,
+    dead: leads.filter(l=>getLeadStatus(l)==="dead").length,
+  };
+
+  const filterConfig = [
+    { id:"active",  label:"Active",    color:"#2d6a4f" },
+    { id:"converted", label:"Converted", color:"#0f3460" },
+    { id:"dead",    label:"Dead",      color:"#888" },
+    { id:"all",     label:"All",       color:"#1a1a2e" },
+  ];
+
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+      {/* Header with filters */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {filterConfig.map(f=>(
+            <button key={f.id} onClick={()=>setStatusFilter(f.id)} style={{
+              background:statusFilter===f.id?f.color:"#fff",
+              color:statusFilter===f.id?"#fff":f.color,
+              border:`1px solid ${f.color}`,
+              borderRadius:6,padding:"5px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600,
+              display:"flex",alignItems:"center",gap:5
+            }}>
+              {f.label}
+              <span style={{background:statusFilter===f.id?"rgba(255,255,255,0.25)":f.color+"22",borderRadius:10,padding:"0px 6px",fontSize:11}}>
+                {counts[f.id]}
+              </span>
+            </button>
+          ))}
+        </div>
         <button onClick={()=>setModal({type:"newLead"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Lead</button>
       </div>
+
+      {filtered.length===0&&(
+        <div style={{background:"#fff",borderRadius:10,padding:"32px",textAlign:"center",color:"#aaa",fontSize:13}}>
+          No {statusFilter} leads.
+        </div>
+      )}
+
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {leads.map(l=>{
+        {filtered.map(l=>{
           const m=getMember(l.assignedTo,TEAM);const overdue=isOverdue(l.followUpDate);const isOpen=expanded===l.id;const ed=editing[l.id]||{};
+          const lStatus=getLeadStatus(l);
+          const statusColor=lStatus==="converted"?"#0f3460":lStatus==="dead"?"#888":"#2d6a4f";
           return(
-            <div key={l.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
+            <div key={l.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0",opacity:lStatus==="dead"?0.7:1}}>
               <div onClick={()=>setExpanded(isOpen?null:l.id)} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",cursor:"pointer"}}>
                 <Avatar member={m} size={30}/>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:700,fontSize:14}}>{l.name}</div>
+                  <div style={{fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
+                    {l.name}
+                    <span style={{fontSize:10,fontWeight:700,color:statusColor,background:statusColor+"15",border:`1px solid ${statusColor}33`,borderRadius:4,padding:"1px 6px",textTransform:"uppercase",letterSpacing:"0.5px"}}>
+                      {lStatus}
+                    </span>
+                  </div>
                   <div style={{fontSize:11,color:"#888"}}>{l.type} · {l.source} · {l.contact}</div>
                 </div>
                 <Badge label={l.meetingStatus} color={l.meetingStatus==="Met"?"#2d6a4f":"#533483"}/>
@@ -526,6 +593,11 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
               {isOpen&&(
                 <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px",display:"flex",flexDirection:"column",gap:14}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>LEAD STATUS</div>
+                      <select value={ed.leadStatus??lStatus} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],leadStatus:e.target.value}}))} style={inputS}>
+                        {["active","converted","dead"].map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+                      </select>
+                    </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>MEETING STATUS</div>
                       <select value={ed.meetingStatus??l.meetingStatus} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],meetingStatus:e.target.value}}))} style={inputS}>
                         {["Not yet","Meeting scheduled","Met","Proposal sent","Converted"].map(s=><option key={s}>{s}</option>)}
@@ -539,7 +611,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
                         {TEAM.map(tm=><option key={tm.id} value={tm.id}>{tm.name}</option>)}
                       </select>
                     </div>
-                    <div style={{gridColumn:"1 / -1"}}><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>NOTES</div>
+                    <div style={{gridColumn:"2 / -1"}}><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>NOTES</div>
                       <input value={ed.notes??l.notes??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],notes:e.target.value}}))} style={inputS} placeholder="Update notes…"/>
                     </div>
                   </div>
@@ -563,107 +635,185 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
 }
 
 // ─── Quotations ───────────────────────────────────────────────────────────────
-function QuotationsTab({quotations,projects,setQuotations}){
-  const [expanded,setExpanded]=useState(null);const [editing,setEditing]=useState({});
+function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProject}){
+  const [expanded,setExpanded]=useState(null);
+  const [editing,setEditing]=useState({});
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit"};
   const updateQ=(id,patch)=>setQuotations(qs=>qs.map(q=>q.id===id?{...q,...patch}:q));
+
+  // Projects auto-appearing based on stage
+  const projQuotations=projects.filter(p=>["Quotation Requested from Supplier","Quotation Sent"].includes(p.stage));
+  // Manual quotation entries
+  const manualQ=quotations;
+
+  const SectionHeader=({label,count})=>(
+    <div style={{display:"flex",alignItems:"center",gap:8,margin:"8px 0 4px"}}>
+      <span style={{fontSize:11,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span>
+      <span style={{background:"#f0f0f0",borderRadius:10,padding:"1px 7px",fontSize:11,color:"#666"}}>{count}</span>
+    </div>
+  );
+
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {quotations.map(q=>{
-        const isOpen=expanded===q.id;const ed=editing[q.id]||{};
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:4}}>
+        <button onClick={()=>setModal({type:"newQuotation",onSave:(q)=>{setQuotations(qs=>[...qs,q])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Quotation</button>
+      </div>
+
+      {/* Auto-populated from Projects */}
+      <SectionHeader label="From Projects" count={projQuotations.length}/>
+      {projQuotations.length===0&&<div style={{background:"#fff",borderRadius:10,padding:"16px",color:"#aaa",fontSize:13}}>No projects at quotation stage yet.</div>}
+      {projQuotations.map(p=>{
+        const members=p.assignedTo.map(id=>getMember(id,TEAM)).filter(Boolean);
+        const overdue=p.followUpDate&&isOverdue(p.followUpDate);
         return(
-          <div key={q.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
-            <div onClick={()=>setExpanded(isOpen?null:q.id)} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",cursor:"pointer"}}>
-              <div style={{flex:1}}><div style={{fontWeight:700}}>{q.client} <span style={{color:"#888",fontWeight:400,fontSize:12}}>· {q.supplier}</span></div>
-                <div style={{fontSize:11,color:"#888"}}>{q.id} · Sent {q.sentDate}</div></div>
-              <span style={{fontWeight:700}}>{currencySymbol[q.currency]}{q.value.toLocaleString()}</span>
-              <Badge label={q.status} color={q.status==="Confirmed"?"#2d6a4f":"#533483"}/>
-              <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
+          <div key={p.id} onClick={()=>setDrawerProject(p.id)} style={{background:"#fff",borderRadius:10,padding:"12px 16px",cursor:"pointer",border:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:14}}
+            onMouseEnter={e=>e.currentTarget.style.background="#fafafa"}
+            onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,fontSize:14}}>{p.client}</div>
+              <div style={{fontSize:11,color:"#888",marginTop:2}}>{p.id} · {p.source}</div>
             </div>
-            {isOpen&&(
-              <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>STATUS</div>
-                    <select value={ed.status??q.status} onChange={e=>setEditing(ev=>({...ev,[q.id]:{...ev[q.id],status:e.target.value}}))} style={{...inputS,width:"100%"}}>
-                      {["Awaiting reply","Confirmed","Rejected","Revised"].map(s=><option key={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>FOLLOW-UP DATE</div>
-                    <input type="date" value={ed.followUpDate??q.followUpDate??""} onChange={e=>setEditing(ev=>({...ev,[q.id]:{...ev[q.id],followUpDate:e.target.value}}))} style={{...inputS,width:"100%"}}/>
-                  </div>
-                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>VALUE</div>
-                    <input type="number" value={ed.value??q.value} onChange={e=>setEditing(ev=>({...ev,[q.id]:{...ev[q.id],value:parseFloat(e.target.value)}}))} style={{...inputS,width:"100%"}}/>
-                  </div>
-                </div>
-                {Object.keys(ed).length>0&&(
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={()=>{updateQ(q.id,ed);setEditing(ev=>{const n={...ev};delete n[q.id];return n;});}}
-                      style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Save</button>
-                    <button onClick={()=>setEditing(ev=>{const n={...ev};delete n[q.id];return n;})}
-                      style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Discard</button>
-                  </div>
-                )}
-              </div>
-            )}
+            <StageIndex stage={p.stage}/>
+            <span style={{fontWeight:700,minWidth:80,textAlign:"right"}}>{p.value}</span>
+            {overdue&&<Badge label="Follow-up overdue" color="#c0392b"/>}
+            <div style={{display:"flex",gap:3}}>{members.map(m=><Avatar key={m.id} member={m} size={24}/>)}</div>
+            <span style={{color:"#c9a84c",fontSize:12}}>Open →</span>
           </div>
         );
       })}
+
+      {/* Manual quotation entries */}
+      {manualQ.length>0&&<>
+        <SectionHeader label="Additional Quotation Details" count={manualQ.length}/>
+        {manualQ.map(q=>{
+          const isOpen=expanded===q.id;const ed=editing[q.id]||{};
+          return(
+            <div key={q.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
+              <div onClick={()=>setExpanded(isOpen?null:q.id)} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",cursor:"pointer"}}>
+                <div style={{flex:1}}><div style={{fontWeight:700}}>{q.client} <span style={{color:"#888",fontWeight:400,fontSize:12}}>· {q.supplier}</span></div>
+                  <div style={{fontSize:11,color:"#888"}}>{q.id} · Sent {q.sentDate}</div></div>
+                <span style={{fontWeight:700}}>{currencySymbol[q.currency]}{Number(q.value).toLocaleString()}</span>
+                <Badge label={q.status} color={q.status==="Confirmed"?"#2d6a4f":"#533483"}/>
+                <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
+              </div>
+              {isOpen&&(
+                <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>STATUS</div>
+                      <select value={ed.status??q.status} onChange={e=>setEditing(ev=>({...ev,[q.id]:{...ev[q.id],status:e.target.value}}))} style={{...inputS,width:"100%"}}>
+                        {["Awaiting reply","Confirmed","Rejected","Revised"].map(s=><option key={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>FOLLOW-UP DATE</div>
+                      <input type="date" value={ed.followUpDate??q.followUpDate??""} onChange={e=>setEditing(ev=>({...ev,[q.id]:{...ev[q.id],followUpDate:e.target.value}}))} style={{...inputS,width:"100%"}}/>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>VALUE</div>
+                      <input type="number" value={ed.value??q.value} onChange={e=>setEditing(ev=>({...ev,[q.id]:{...ev[q.id],value:parseFloat(e.target.value)}}))} style={{...inputS,width:"100%"}}/>
+                    </div>
+                  </div>
+                  {Object.keys(ed).length>0&&(
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>{updateQ(q.id,ed);setEditing(ev=>{const n={...ev};delete n[q.id];return n;});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Save</button>
+                      <button onClick={()=>setEditing(ev=>{const n={...ev};delete n[q.id];return n;})} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Discard</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </>}
     </div>
   );
 }
 
 // ─── Orders ───────────────────────────────────────────────────────────────────
-function OrdersTab({orders,projects,setOrders}){
+function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
   const [expanded,setExpanded]=useState(null);const [editing,setEditing]=useState({});
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
   const updateO=(id,patch)=>setOrders(os=>os.map(o=>o.id===id?{...o,...patch}:o));
+
+  const projOrders=projects.filter(p=>["Order Confirmed","Fixtures Ordered","In Transit"].includes(p.stage));
+
+  const SectionHeader=({label,count})=>(
+    <div style={{display:"flex",alignItems:"center",gap:8,margin:"8px 0 4px"}}>
+      <span style={{fontSize:11,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span>
+      <span style={{background:"#f0f0f0",borderRadius:10,padding:"1px 7px",fontSize:11,color:"#666"}}>{count}</span>
+    </div>
+  );
+
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {orders.map(o=>{
-        const proj=projects.find(p=>p.id===o.projectId);const isOpen=expanded===o.id;const ed=editing[o.id]||{};
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:4}}>
+        <button onClick={()=>setModal({type:"newOrder",onSave:(o)=>{setOrders(os=>[...os,o])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Order</button>
+      </div>
+
+      <SectionHeader label="From Projects" count={projOrders.length}/>
+      {projOrders.length===0&&<div style={{background:"#fff",borderRadius:10,padding:"16px",color:"#aaa",fontSize:13}}>No projects at order stage yet.</div>}
+      {projOrders.map(p=>{
+        const members=p.assignedTo.map(id=>getMember(id,TEAM)).filter(Boolean);
         return(
-          <div key={o.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
-            <div onClick={()=>setExpanded(isOpen?null:o.id)} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",cursor:"pointer"}}>
-              <div style={{flex:1}}><div style={{fontWeight:700}}>{proj?.client} <span style={{color:"#888",fontWeight:400,fontSize:12}}>· {o.vendor}</span></div>
-                <div style={{fontSize:11,color:"#888"}}>{o.id} · PO: {o.poNumber}</div></div>
-              <span style={{fontWeight:700}}>{currencySymbol[o.currency]}{o.value.toLocaleString()}</span>
-              <Badge label={o.status} color="#0f3460"/>
-              <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
+          <div key={p.id} onClick={()=>setDrawerProject(p.id)} style={{background:"#fff",borderRadius:10,padding:"12px 16px",cursor:"pointer",border:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:14}}
+            onMouseEnter={e=>e.currentTarget.style.background="#fafafa"}
+            onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,fontSize:14}}>{p.client}</div>
+              <div style={{fontSize:11,color:"#888",marginTop:2}}>{p.id} · Updated {p.lastUpdated}</div>
             </div>
-            {isOpen&&(
-              <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>STATUS</div>
-                    <select value={ed.status??o.status} onChange={e=>setEditing(ev=>({...ev,[o.id]:{...ev[o.id],status:e.target.value}}))} style={inputS}>
-                      {["Ordered","In Transit","Delivered","Cancelled"].map(s=><option key={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>TRACKING NUMBER</div>
-                    <input value={ed.trackingNumber??o.trackingNumber} onChange={e=>setEditing(ev=>({...ev,[o.id]:{...ev[o.id],trackingNumber:e.target.value}}))} style={inputS}/>
-                  </div>
-                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>ETA</div>
-                    <input type="date" value={ed.eta??o.eta} onChange={e=>setEditing(ev=>({...ev,[o.id]:{...ev[o.id],eta:e.target.value}}))} style={inputS}/>
-                  </div>
-                </div>
-                {Object.keys(ed).length>0&&(
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={()=>{updateO(o.id,ed);setEditing(ev=>{const n={...ev};delete n[o.id];return n;});}}
-                      style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Save</button>
-                    <button onClick={()=>setEditing(ev=>{const n={...ev};delete n[o.id];return n;})}
-                      style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Discard</button>
-                  </div>
-                )}
-              </div>
-            )}
+            <StageIndex stage={p.stage}/>
+            <span style={{fontWeight:700,minWidth:80,textAlign:"right"}}>{p.value}</span>
+            <div style={{display:"flex",gap:3}}>{members.map(m=><Avatar key={m.id} member={m} size={24}/>)}</div>
+            <span style={{color:"#c9a84c",fontSize:12}}>Open →</span>
           </div>
         );
       })}
+
+      {orders.length>0&&<>
+        <SectionHeader label="Order Details" count={orders.length}/>
+        {orders.map(o=>{
+          const proj=projects.find(p=>p.id===o.projectId);const isOpen=expanded===o.id;const ed=editing[o.id]||{};
+          return(
+            <div key={o.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
+              <div onClick={()=>setExpanded(isOpen?null:o.id)} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",cursor:"pointer"}}>
+                <div style={{flex:1}}><div style={{fontWeight:700}}>{proj?.client||o.projectId} <span style={{color:"#888",fontWeight:400,fontSize:12}}>· {o.vendor}</span></div>
+                  <div style={{fontSize:11,color:"#888"}}>{o.id} · PO: {o.poNumber}</div></div>
+                <span style={{fontWeight:700}}>{currencySymbol[o.currency]}{Number(o.value).toLocaleString()}</span>
+                <Badge label={o.status} color="#0f3460"/>
+                <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
+              </div>
+              {isOpen&&(
+                <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>STATUS</div>
+                      <select value={ed.status??o.status} onChange={e=>setEditing(ev=>({...ev,[o.id]:{...ev[o.id],status:e.target.value}}))} style={inputS}>
+                        {["Ordered","In Transit","Delivered","Cancelled"].map(s=><option key={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>TRACKING NUMBER</div>
+                      <input value={ed.trackingNumber??o.trackingNumber??""} onChange={e=>setEditing(ev=>({...ev,[o.id]:{...ev[o.id],trackingNumber:e.target.value}}))} style={inputS}/>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>ETA</div>
+                      <input type="date" value={ed.eta??o.eta??""} onChange={e=>setEditing(ev=>({...ev,[o.id]:{...ev[o.id],eta:e.target.value}}))} style={inputS}/>
+                    </div>
+                  </div>
+                  {Object.keys(ed).length>0&&(
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>{updateO(o.id,ed);setEditing(ev=>{const n={...ev};delete n[o.id];return n;});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Save</button>
+                      <button onClick={()=>setEditing(ev=>{const n={...ev};delete n[o.id];return n;})} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Discard</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </>}
     </div>
   );
 }
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
-function PaymentsTab({payments,orders,setPayments,currentUser}){
+function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
   const [expanded,setExpanded]=useState(null);const [showAddSub,setShowAddSub]=useState(null);const [subForm,setSubForm]=useState({});
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"5px 8px",fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
   const updateSubPayment=(payId,spId,patch)=>setPayments(ps=>ps.map(p=>p.id!==payId?p:{...p,subPayments:p.subPayments.map(sp=>sp.id!==spId?sp:{...sp,...patch})}));
@@ -675,7 +825,10 @@ function PaymentsTab({payments,orders,setPayments,currentUser}){
   };
   return(
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:"#fff3cd",border:"1px solid #ffc107",borderRadius:8,padding:"8px 14px",fontSize:12,color:"#856404"}}>🔒 Visible to Aman, Mohini, and Ram only</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{background:"#fff3cd",border:"1px solid #ffc107",borderRadius:8,padding:"8px 14px",fontSize:12,color:"#856404",flex:1,marginRight:12}}>🔒 Visible to Aman, Mohini, and Ram only</div>
+        <button onClick={()=>setModal({type:"newPayment",onSave:(p)=>{setPayments(ps=>[...ps,p])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Payment</button>
+      </div>
       {payments.map(pay=>{
         const isOpen=expanded===pay.id;
         const totalMade=pay.subPayments.filter(s=>s.type==="made"&&s.status==="Confirmed").reduce((a,s)=>a+s.amount,0);
@@ -770,23 +923,64 @@ function PaymentsTab({payments,orders,setPayments,currentUser}){
 }
 
 // ─── Delivery & Install ───────────────────────────────────────────────────────
-function DeliveryTab({projects}){
-  const relevant=projects.filter(p=>["In Transit","Delivered","Installation","Closed"].includes(p.stage));
+function DeliveryTab({projects,tasks,setDrawerProject}){
+  const relevant=projects.filter(p=>["Fixtures Ordered","In Transit","Delivered","Installation","Closed"].includes(p.stage));
+  const SectionHeader=({label,count,color})=>(
+    <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0 4px"}}>
+      <span style={{fontSize:11,fontWeight:700,color:color||"#888",textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span>
+      <span style={{background:"#f0f0f0",borderRadius:10,padding:"1px 7px",fontSize:11,color:"#666"}}>{count}</span>
+    </div>
+  );
+  const groups=[
+    {label:"Fixtures Ordered",color:"#533483",stages:["Fixtures Ordered"]},
+    {label:"In Transit",color:"#0f3460",stages:["In Transit"]},
+    {label:"Delivered",color:"#2d6a4f",stages:["Delivered"]},
+    {label:"Installation",color:"#c9a84c",stages:["Installation"]},
+    {label:"Closed",color:"#888",stages:["Closed"]},
+  ];
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {relevant.map(p=>{
-        const members=p.assignedTo.map(id=>getMember(id,TEAM)).filter(Boolean);
+    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+      {groups.map(g=>{
+        const gProjects=relevant.filter(p=>g.stages.includes(p.stage));
+        if(gProjects.length===0)return null;
         return(
-          <div key={p.id} style={{background:"#fff",borderRadius:10,padding:16}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-              <div><div style={{fontWeight:800,fontSize:15}}>{p.client}</div><div style={{fontSize:11,color:"#888",marginTop:2}}>{p.id}</div></div>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>{members.map(m=><Avatar key={m.id} member={m} size={28}/>)}<StageIndex stage={p.stage}/></div>
-            </div>
-            {p.comments.length>0&&(
-              <div style={{marginTop:10,padding:"8px 12px",background:"#f8f8f8",borderRadius:6,fontSize:12,color:"#555"}}>
-                <strong>{p.comments[p.comments.length-1].by}:</strong> {p.comments[p.comments.length-1].text}
-              </div>
-            )}
+          <div key={g.label}>
+            <SectionHeader label={g.label} count={gProjects.length} color={g.color}/>
+            {gProjects.map(p=>{
+              const members=p.assignedTo.map(id=>getMember(id,TEAM)).filter(Boolean);
+              const projTasks=tasks.filter(t=>t.projectId===p.id&&t.status!=="Done");
+              const lastComment=p.comments&&p.comments.length>0?p.comments[p.comments.length-1]:null;
+              return(
+                <div key={p.id} onClick={()=>setDrawerProject(p.id)} style={{background:"#fff",borderRadius:10,padding:"14px 16px",marginBottom:8,cursor:"pointer",border:`1px solid ${g.color}22`}}
+                  onMouseEnter={e=>e.currentTarget.style.background="#fafafa"}
+                  onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:15}}>{p.client}</div>
+                      <div style={{fontSize:11,color:"#888",marginTop:2}}>{p.id} · Last updated {p.lastUpdated}</div>
+                    </div>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      {members.map(m=><Avatar key={m.id} member={m} size={26}/>)}
+                      <span style={{color:"#c9a84c",fontSize:12,marginLeft:4}}>Open →</span>
+                    </div>
+                  </div>
+                  {lastComment&&(
+                    <div style={{marginTop:10,padding:"8px 12px",background:"#f8f8f8",borderRadius:6,fontSize:12,color:"#555"}}>
+                      <strong>{lastComment.by}:</strong> {lastComment.text}
+                    </div>
+                  )}
+                  {projTasks.length>0&&(
+                    <div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {projTasks.map(t=>(
+                        <span key={t.id} style={{background:"#fff3cd",border:"1px solid #ffc10744",borderRadius:5,padding:"2px 8px",fontSize:11,color:"#856404"}}>
+                          ⏳ {t.title}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       })}
@@ -796,33 +990,136 @@ function DeliveryTab({projects}){
 }
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
-function TasksTab({tasks,projects,currentUser,setTasks,setModal}){
-  const [filter,setFilter]=useState("all");
-  const filtered=filter==="all"?tasks:filter==="mine"?tasks.filter(t=>t.assignedTo===currentUser.id):tasks.filter(t=>t.status===filter);
+function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDrawerProject}){
+  const [statusFilter,setStatusFilter]=useState("all");
+  const [memberFilter,setMemberFilter]=useState("all");
+
+  const tomorrow = () => { const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().split("T")[0]; };
+  const daysDiff2 = (date) => { const diff=(new Date(date)-new Date(today()))/(1000*60*60*24); return Math.round(diff); };
+
+  // Projects that need follow-up attention
+  const followUpProjects = projects.filter(p => {
+    if (!p.followUpDate || p.stage === "Closed") return false;
+    return daysDiff2(p.followUpDate) <= 1;
+  });
+  // Leads that need follow-up
+  const followUpLeads = leads.filter(l => {
+    if (!l.followUpDate) return false;
+    return daysDiff2(l.followUpDate) <= 1;
+  });
+
+  // Filter manual tasks
+  const filteredTasks = tasks.filter(t => {
+    const statusOk = statusFilter==="all" ? true : statusFilter==="Pending"||statusFilter==="Done" ? t.status===statusFilter : true;
+    const memberOk = memberFilter==="all" ? true : t.assignedTo===parseInt(memberFilter);
+    return statusOk && memberOk;
+  }).filter(t => statusFilter==="mine" ? t.assignedTo===currentUser.id : true);
+
+  const SectionHeader = ({label, count, color}) => (
+    <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0 6px"}}>
+      <span style={{fontSize:11,fontWeight:700,color:color||"#888",textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span>
+      <span style={{background:"#f0f0f0",borderRadius:10,padding:"1px 7px",fontSize:11,color:"#666"}}>{count}</span>
+    </div>
+  );
+
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <div style={{display:"flex",gap:6}}>
-          {["all","mine","Pending","Done"].map(f=>(
-            <button key={f} onClick={()=>setFilter(f)} style={{background:filter===f?"#1a1a2e":"#fff",color:filter===f?"#fff":"#555",border:"1px solid #ddd",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-              {f==="all"?"All":f==="mine"?"Mine":f}
+      {/* Controls */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {/* Status filters */}
+          {[["all","All"],["mine","Mine"],["Pending","Pending"],["Done","Done"]].map(([f,label])=>(
+            <button key={f} onClick={()=>setStatusFilter(f)} style={{background:statusFilter===f?"#1a1a2e":"#fff",color:statusFilter===f?"#fff":"#555",border:"1px solid #ddd",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+              {label}
             </button>
           ))}
+          {/* Member filter */}
+          <select value={memberFilter} onChange={e=>setMemberFilter(e.target.value)}
+            style={{border:"1px solid #ddd",borderRadius:6,padding:"5px 10px",fontSize:12,fontFamily:"inherit",background:memberFilter!=="all"?"#1a1a2e":"#fff",color:memberFilter!=="all"?"#fff":"#555"}}>
+            <option value="all">All Members</option>
+            {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
         </div>
         <button onClick={()=>setModal({type:"newTask"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Task</button>
       </div>
+
+      {/* Auto-populated: Lead follow-ups */}
+      {followUpLeads.length>0 && <>
+        <SectionHeader label="Lead Follow-ups Due" count={followUpLeads.length} color="#533483"/>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+          {followUpLeads.map(l=>{
+            const diff=daysDiff2(l.followUpDate);
+            const isPast=diff<0; const isToday=diff===0; const isTomorrow=diff===1;
+            const borderColor=isPast?"#c0392b":isToday?"#c9a84c":"#533483";
+            const bgColor=isPast?"#fff5f5":isToday?"#fff8e7":"#f8f4ff";
+            const label=isPast?`🔴 Overdue by ${Math.abs(diff)}d`:isToday?"🟡 Due today":"🟣 Due tomorrow";
+            const m=getMember(l.assignedTo,TEAM);
+            return(
+              <div key={l.id} style={{background:bgColor,border:`1px solid ${borderColor}44`,borderLeft:`4px solid ${borderColor}`,borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13}}>{l.name}</div>
+                  <div style={{fontSize:11,color:"#666",marginTop:2}}>{l.type} · {l.source} · {l.meetingStatus} · Follow-up: {l.followUpDate}</div>
+                  {l.notes&&<div style={{fontSize:11,color:"#888",marginTop:1,fontStyle:"italic"}}>{l.notes}</div>}
+                </div>
+                <span style={{fontSize:11,fontWeight:700,color:borderColor}}>{label}</span>
+                {m&&<Avatar member={m} size={22}/>}
+              </div>
+            );
+          })}
+        </div>
+      </>}
+
+      {/* Auto-populated: Project follow-ups */}
+      {followUpProjects.length>0 && <>
+        <SectionHeader label="Project Follow-ups Due" count={followUpProjects.length} color="#c0392b"/>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+          {followUpProjects.map(p=>{
+            const diff=daysDiff2(p.followUpDate);
+            const isToday=diff===0;
+            const isTomorrow=diff===1;
+            const isPast=diff<0;
+            const members=p.assignedTo.map(id=>getMember(id,TEAM)).filter(Boolean);
+            const bgColor=isPast?"#fff5f5":isToday?"#fff8e7":"#f0faf4";
+            const borderColor=isPast?"#e74c3c":isToday?"#c9a84c":"#2d6a4f";
+            const label=isPast?`🔴 Overdue by ${Math.abs(diff)} day${Math.abs(diff)>1?"s":""}`:isToday?"🟡 Due today":"🟢 Due tomorrow";
+            return(
+              <div key={p.id} onClick={()=>setDrawerProject(p.id)}
+                style={{background:bgColor,border:`1px solid ${borderColor}44`,borderLeft:`4px solid ${borderColor}`,borderRadius:8,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}
+                onMouseEnter={e=>e.currentTarget.style.opacity="0.85"}
+                onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13}}>{p.client}</div>
+                  <div style={{fontSize:11,color:"#666",marginTop:2}}>{p.stage} · Follow-up: {p.followUpDate}</div>
+                </div>
+                <span style={{fontSize:11,fontWeight:700,color:borderColor}}>{label}</span>
+                <div style={{display:"flex",gap:3}}>{members.map(m=><Avatar key={m.id} member={m} size={22}/>)}</div>
+                <span style={{color:"#c9a84c",fontSize:11}}>Open →</span>
+              </div>
+            );
+          })}
+        </div>
+      </>}
+
+      {/* Manual tasks */}
+      <SectionHeader label="Tasks" count={filteredTasks.length} color="#555"/>
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
-            {["","Task","Type","Assigned To","Due Date","Project","Status"].map(h=>(
+            {["","Task","Assigned To","Due Date","Project","Status",""].map(h=>(
               <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase"}}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
-            {filtered.map(t=>{
-              const m=getMember(t.assignedTo,TEAM);const proj=projects.find(p=>p.id===t.projectId);const overdue=t.status!=="Done"&&isOverdue(t.dueDate);
+            {filteredTasks.length===0&&(
+              <tr><td colSpan={7} style={{padding:"24px",textAlign:"center",color:"#aaa",fontSize:13}}>No tasks match this filter.</td></tr>
+            )}
+            {filteredTasks.map(t=>{
+              const m=getMember(t.assignedTo,TEAM);
+              const proj=projects.find(p=>p.id===t.projectId);
+              const overdue=t.status!=="Done"&&isOverdue(t.dueDate);
+              const dueTomorrow=t.status!=="Done"&&t.dueDate===tomorrow();
               return(
-                <tr key={t.id} style={{borderBottom:"1px solid #f0f0f0",opacity:t.status==="Done"?0.5:1}}>
+                <tr key={t.id} style={{borderBottom:"1px solid #f0f0f0",opacity:t.status==="Done"?0.5:1,background:overdue?"#fff5f5":dueTomorrow?"#fffdf0":""}}>
                   <td style={{padding:"10px 14px"}}>
                     <button onClick={()=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,status:tt.status==="Done"?"Pending":"Done"}:tt))}
                       style={{width:18,height:18,borderRadius:4,border:`2px solid ${t.status==="Done"?"#2d6a4f":"#ddd"}`,background:t.status==="Done"?"#2d6a4f":"none",cursor:"pointer",color:"#fff",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -830,11 +1127,22 @@ function TasksTab({tasks,projects,currentUser,setTasks,setModal}){
                     </button>
                   </td>
                   <td style={{padding:"10px 14px",fontWeight:600,textDecoration:t.status==="Done"?"line-through":"none"}}>{t.title}</td>
-                  <td style={{padding:"10px 14px"}}><Badge label={t.type} color={t.type==="project"?"#0f3460":"#533483"}/></td>
-                  <td style={{padding:"10px 14px"}}>{m&&<div style={{display:"flex",alignItems:"center",gap:6}}><Avatar member={m} size={24}/><span style={{fontSize:12}}>{m.name}</span></div>}</td>
-                  <td style={{padding:"10px 14px",color:overdue?"#c0392b":"#333",fontWeight:overdue?700:400}}>{overdue?"🔴 ":""}{t.dueDate}</td>
+                  <td style={{padding:"8px 14px"}}>
+                    <select value={t.assignedTo} onChange={e=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,assignedTo:parseInt(e.target.value)}:tt))}
+                      style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 6px",fontSize:11,fontFamily:"inherit",background:"#fff"}}>
+                      {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </td>
+                  <td style={{padding:"8px 14px"}}>
+                    <input type="date" value={t.dueDate||""} onChange={e=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,dueDate:e.target.value}:tt))}
+                      style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 6px",fontSize:11,fontFamily:"inherit",color:overdue?"#c0392b":"#333",fontWeight:overdue?700:400}}/>
+                  </td>
                   <td style={{padding:"10px 14px",color:"#666",fontSize:12}}>{proj?.client||"—"}</td>
                   <td style={{padding:"10px 14px"}}><Badge label={t.status} color={t.status==="Done"?"#2d6a4f":"#c0392b"}/></td>
+                  <td style={{padding:"8px 8px"}}>
+                    <button onClick={()=>{if(window.confirm("Delete task: "+t.title+"?"))setTasks(ts=>ts.filter(x=>x.id!==t.id));}}
+                      style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#c0392b"}}>🗑</button>
+                  </td>
                 </tr>
               );
             })}
@@ -874,104 +1182,202 @@ function TeamTab({currentUser}){
 }
 
 // ─── Project Drawer ───────────────────────────────────────────────────────────
-function ProjectDrawer({project,tasks,currentUser,onClose,onAdvanceStage,onAddComment,onUpdateDriveLink}){
-  const [comment,setComment]=useState("");const [advanceMode,setAdvanceMode]=useState(false);
-  const [advanceComment,setAdvanceComment]=useState("");const [driveLink,setDriveLink]=useState(project?.driveLink||"");const [editingDrive,setEditingDrive]=useState(false);
+function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddComment,onUpdateDriveLinks,onAddTask}){
+  const [comment,setComment]=useState("");
+  const [commentAssignee,setCommentAssignee]=useState(currentUser.id);
+  const [driveLink,setDriveLink]=useState(project?.driveLink||"");
+  const [editingDrive,setEditingDrive]=useState(false);
+  const [showAddTask,setShowAddTask]=useState(false);
+  const [taskForm,setTaskForm]=useState({title:"",assignedTo:currentUser.id,dueDate:addDays(today(),1)});
+  const [stageComment,setStageComment]=useState("");
+  const [pendingStage,setPendingStage]=useState(null);
+
   if(!project)return null;
   const projTasks=tasks.filter(t=>t.projectId===project.id);
-  const stageIdx=STAGES.indexOf(project.stage);const nextStage=stageIdx<STAGES.length-1?STAGES[stageIdx+1]:null;
+
+  const handleStageChange=(newStage)=>{
+    if(newStage===project.stage)return;
+    setPendingStage(newStage);
+    setStageComment("");
+  };
+
+  const confirmStageChange=()=>{
+    if(!stageComment.trim())return;
+    onChangeStage(project.id, pendingStage, stageComment);
+    setPendingStage(null);
+    setStageComment("");
+  };
+
+  const inputS={border:"1px solid #ddd",borderRadius:6,padding:"6px 10px",fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
+
   return(
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex"}}>
       <div style={{flex:1,background:"#00000060"}} onClick={onClose}/>
-      <div style={{width:500,background:"#fff",overflowY:"auto",padding:24,display:"flex",flexDirection:"column",gap:18}}>
+      <div style={{width:520,background:"#fff",overflowY:"auto",padding:24,display:"flex",flexDirection:"column",gap:16}}>
+
+        {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-          <div><div style={{fontSize:10,color:"#888",fontFamily:"monospace"}}>{project.id}</div>
-            <h2 style={{margin:"4px 0 0",fontSize:20,fontWeight:800}}>{project.client}</h2></div>
+          <div>
+            <div style={{fontSize:10,color:"#888",fontFamily:"monospace"}}>{project.id}</div>
+            <h2 style={{margin:"4px 0 0",fontSize:20,fontWeight:800}}>{project.client}</h2>
+          </div>
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
         </div>
+
+        {/* Stage selector */}
         <div style={{background:"#f8f8f8",borderRadius:8,padding:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.5px"}}>📁 Google Drive Folder</div>
-          {!editingDrive?(
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              {project.driveLink?<a href={project.driveLink} target="_blank" rel="noreferrer" style={{color:"#0f3460",fontWeight:600,fontSize:13}}>Open Project Folder ↗</a>:<span style={{color:"#aaa",fontSize:13}}>No Drive link added</span>}
-              <button onClick={()=>{setDriveLink(project.driveLink||"");setEditingDrive(true);}} style={{marginLeft:"auto",background:"none",border:"1px solid #ddd",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{project.driveLink?"Edit":"Add Link"}</button>
+          <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>Current Stage</div>
+          <select value={pendingStage||project.stage} onChange={e=>handleStageChange(e.target.value)}
+            style={{width:"100%",border:"2px solid #c9a84c",borderRadius:7,padding:"8px 12px",fontSize:13,fontFamily:"inherit",fontWeight:700,background:"#fff",color:"#1a1a2e",cursor:"pointer"}}>
+            {STAGES.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          {pendingStage&&pendingStage!==project.stage&&(
+            <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{fontSize:12,color:"#c9a84c",fontWeight:600}}>Changing stage to: {pendingStage}</div>
+              <textarea value={stageComment} onChange={e=>setStageComment(e.target.value)}
+                placeholder="Add a comment about this stage change (required)…"
+                style={{...inputS,resize:"vertical",minHeight:60}}/>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={confirmStageChange}
+                  style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600,flex:1}}>
+                  Confirm Stage Change
+                </button>
+                <button onClick={()=>{setPendingStage(null);setStageComment("");}}
+                  style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                  Cancel
+                </button>
+              </div>
             </div>
+          )}
+        </div>
+
+        {/* Drive links - multiple */}
+        <div style={{background:"#f8f8f8",borderRadius:8,padding:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>📁 Google Drive Folders</div>
+          {(project.driveLinks||[project.driveLink].filter(Boolean)).map((link,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+              <a href={link} target="_blank" rel="noreferrer" style={{flex:1,color:"#0f3460",fontSize:12,textDecoration:"none",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📁 {link.replace("https://drive.google.com/","drive.google.com/").substring(0,50)}…</a>
+              <button onClick={()=>onUpdateDriveLinks(project.id,(project.driveLinks||[project.driveLink].filter(Boolean)).filter((_,j)=>j!==i))}
+                style={{background:"none",border:"none",color:"#c0392b",cursor:"pointer",fontSize:14,padding:"0 4px"}}>✕</button>
+            </div>
+          ))}
+          {!editingDrive?(
+            <button onClick={()=>{setDriveLink("");setEditingDrive(true);}} style={{background:"none",border:"1px dashed #ddd",borderRadius:5,padding:"4px 12px",fontSize:11,cursor:"pointer",fontFamily:"inherit",color:"#555",width:"100%"}}>+ Add Drive Link</button>
           ):(
-            <div style={{display:"flex",gap:6}}>
+            <div style={{display:"flex",gap:6,marginTop:6}}>
               <input value={driveLink} onChange={e=>setDriveLink(e.target.value)} placeholder="https://drive.google.com/drive/folders/…" style={{flex:1,border:"1px solid #ddd",borderRadius:6,padding:"6px 10px",fontSize:12,fontFamily:"inherit"}}/>
-              <button onClick={()=>{onUpdateDriveLink(project.id,driveLink);setEditingDrive(false);}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Save</button>
+              <button onClick={()=>{if(driveLink.trim()){const existing=project.driveLinks||[project.driveLink].filter(Boolean);onUpdateDriveLinks(project.id,[...existing,driveLink]);setEditingDrive(false);setDriveLink("");}}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Add</button>
               <button onClick={()=>setEditingDrive(false)} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"0 10px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
             </div>
           )}
         </div>
+
+
+
+        {/* Tasks */}
         <div>
-          <div style={{fontSize:12,fontWeight:700,color:"#555",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.5px"}}>Stage History</div>
-          {project.stageHistory.map((s,i)=>(
-            <div key={i} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
-                <div style={{width:10,height:10,borderRadius:"50%",background:"#c9a84c",marginTop:3,flexShrink:0}}/>
-                {i<project.stageHistory.length-1&&<div style={{width:2,flex:1,background:"#e8e8e8",minHeight:16}}/>}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px"}}>Tasks ({projTasks.length})</div>
+            <button onClick={()=>setShowAddTask(!showAddTask)}
+              style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+              {showAddTask?"Cancel":"+ Assign Task"}
+            </button>
+          </div>
+          {showAddTask&&(
+            <div style={{background:"#f8f8f8",borderRadius:8,padding:12,marginBottom:10,display:"flex",flexDirection:"column",gap:8}}>
+              <input value={taskForm.title} onChange={e=>setTaskForm(f=>({...f,title:e.target.value}))}
+                placeholder="Task title *" style={inputS}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <select value={taskForm.assignedTo} onChange={e=>setTaskForm(f=>({...f,assignedTo:parseInt(e.target.value)}))} style={inputS}>
+                  {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <input type="date" value={taskForm.dueDate} onChange={e=>setTaskForm(f=>({...f,dueDate:e.target.value}))} style={inputS}/>
               </div>
-              <div style={{paddingBottom:12}}>
-                <div style={{fontSize:12,fontWeight:700}}>{s.stage}</div>
-                <div style={{fontSize:10,color:"#888"}}>{s.date} · {s.by}</div>
+              <button onClick={()=>{
+                if(!taskForm.title.trim())return;
+                onAddTask({id:"T"+Date.now(),title:taskForm.title,assignedTo:taskForm.assignedTo,dueDate:taskForm.dueDate,projectId:project.id,status:"Pending",type:"project"});
+                setTaskForm({title:"",assignedTo:currentUser.id,dueDate:addDays(today(),1)});
+                setShowAddTask(false);
+              }} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+                Add Task
+              </button>
+            </div>
+          )}
+          {projTasks.map(t=>{
+            const m=getMember(t.assignedTo,TEAM);
+            return(
+              <div key={t.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #f0f0f0"}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:t.status==="Done"?"#2d6a4f":isOverdue(t.dueDate)?"#c0392b":"#ccc",flexShrink:0}}/>
+                <span style={{flex:1,fontSize:12,textDecoration:t.status==="Done"?"line-through":"none",color:t.status==="Done"?"#888":"#333"}}>{t.title}</span>
+                <span style={{fontSize:10,color:"#888"}}>{t.dueDate}</span>
+                {m&&<Avatar member={m} size={22}/>}
+                <Badge label={t.status} color={t.status==="Done"?"#2d6a4f":"#c0392b"}/>
               </div>
+            );
+          })}
+          {projTasks.length===0&&!showAddTask&&<div style={{fontSize:12,color:"#aaa",padding:"8px 0"}}>No tasks yet. Click + Assign Task to add one.</div>}
+        </div>
+
+        {/* Comments — assignable to anyone */}
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:"#555",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>Comments</div>
+          {project.comments.map((c,i)=>(
+            <div key={i} style={{background:"#f8f8f8",borderRadius:6,padding:"8px 10px",marginBottom:6}}>
+              <div style={{fontSize:11,color:"#888",marginBottom:2}}>
+                <strong style={{color:"#1a1a2e"}}>{c.by}</strong> · {c.date}
+              </div>
+              <div style={{fontSize:12,color:"#444"}}>{c.text}</div>
             </div>
           ))}
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+            <div style={{display:"flex",gap:6}}>
+              <select value={commentAssignee} onChange={e=>setCommentAssignee(parseInt(e.target.value))}
+                style={{border:"1px solid #ddd",borderRadius:6,padding:"6px 8px",fontSize:12,fontFamily:"inherit",background:"#fff"}}>
+                {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              <span style={{fontSize:11,color:"#888",alignSelf:"center"}}>adding comment as</span>
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <textarea value={comment} onChange={e=>setComment(e.target.value)}
+                placeholder="Add a comment…"
+                style={{flex:1,border:"1px solid #ddd",borderRadius:6,padding:"7px 10px",fontSize:12,fontFamily:"inherit",resize:"none",height:52}}/>
+              <button onClick={()=>{
+                if(!comment.trim())return;
+                const memberName=getMember(commentAssignee,TEAM)?.name||currentUser.name;
+                onAddComment(project.id,comment,memberName);
+                setComment("");
+              }} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"0 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Post</button>
+            </div>
+          </div>
         </div>
-        {nextStage&&(
-          <div style={{background:"#f8f8f8",borderRadius:8,padding:14}}>
-            {!advanceMode?(
-              <button onClick={()=>setAdvanceMode(true)} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,width:"100%"}}>Advance to: {nextStage} →</button>
-            ):(
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <div style={{fontSize:12,fontWeight:700}}>Comment required before advancing</div>
-                <textarea value={advanceComment} onChange={e=>setAdvanceComment(e.target.value)} placeholder="What was done at this stage?" style={{border:"1px solid #ddd",borderRadius:6,padding:"8px 10px",fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:60}}/>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>{if(advanceComment.trim()){onAdvanceStage(project.id,advanceComment);setAdvanceMode(false);setAdvanceComment("");}}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600,flex:1}}>Confirm</button>
-                  <button onClick={()=>{setAdvanceMode(false);setAdvanceComment("");}} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"7px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        {projTasks.length>0&&(
-          <div>
-            <div style={{fontSize:12,fontWeight:700,color:"#555",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>Linked Tasks ({projTasks.length})</div>
-            {projTasks.map(t=>{const m=getMember(t.assignedTo,TEAM);return(
-              <div key={t.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #f0f0f0"}}>
-                <div style={{width:8,height:8,borderRadius:"50%",background:t.status==="Done"?"#2d6a4f":isOverdue(t.dueDate)?"#c0392b":"#ccc"}}/>
-                <span style={{flex:1,fontSize:12,textDecoration:t.status==="Done"?"line-through":"none",color:t.status==="Done"?"#888":"#333"}}>{t.title}</span>
-                {m&&<Avatar member={m} size={22}/>}
-              </div>
-            );})}
-          </div>
-        )}
-        <NotesPanel comments={project.comments} onAdd={text=>onAddComment(project.id,text)} currentUser={currentUser} label="Comments"/>
+
       </div>
     </div>
   );
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSaveLead}){
+function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSaveLead,onModalSave}){
   const [form,setForm]=useState({});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const inputStyle={width:"100%",border:"1px solid #ddd",borderRadius:6,padding:"7px 10px",fontSize:13,fontFamily:"inherit",boxSizing:"border-box"};
-  const labelStyle={fontSize:12,fontWeight:700,color:"#555",display:"block",marginBottom:4};
+  const iS={width:"100%",border:"1px solid #ddd",borderRadius:6,padding:"7px 10px",fontSize:13,fontFamily:"inherit",boxSizing:"border-box"};
+  const lS={fontSize:12,fontWeight:700,color:"#555",display:"block",marginBottom:4};
+
+  const titles={newTask:"New Task",newLead:"New Lead",newProject:"New Project",newQuotation:"New Quotation",newOrder:"New Order",newPayment:"New Payment Record"};
+
   const renderForm=()=>{
-    if(modal.type==="newTask")return(
+    if(modal.type==="newTask") return(
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div><label style={labelStyle}>Task title *</label><input style={inputStyle} value={form.title||""} onChange={e=>set("title",e.target.value)} placeholder="What needs to be done?"/></div>
-        <div><label style={labelStyle}>Assign to *</label>
-          <select style={inputStyle} value={form.assignedTo||""} onChange={e=>set("assignedTo",parseInt(e.target.value))}>
+        <div><label style={lS}>Task title *</label><input style={iS} value={form.title||""} onChange={e=>set("title",e.target.value)} placeholder="What needs to be done?"/></div>
+        <div><label style={lS}>Assign to *</label>
+          <select style={iS} value={form.assignedTo||""} onChange={e=>set("assignedTo",parseInt(e.target.value))}>
             <option value="">— Select team member —</option>
             {TEAM.map(m=><option key={m.id} value={m.id}>{m.name} ({m.designation})</option>)}
           </select>
         </div>
-        <div><label style={labelStyle}>Due date *</label><input type="date" style={inputStyle} value={form.dueDate||today()} onChange={e=>set("dueDate",e.target.value)}/></div>
-        <div><label style={labelStyle}>Linked project (optional)</label>
-          <select style={inputStyle} value={form.projectId||""} onChange={e=>set("projectId",e.target.value||null)}>
+        <div><label style={lS}>Due date *</label><input type="date" style={iS} value={form.dueDate||today()} onChange={e=>set("dueDate",e.target.value)}/></div>
+        <div><label style={lS}>Linked project (optional)</label>
+          <select style={iS} value={form.projectId||""} onChange={e=>set("projectId",e.target.value||null)}>
             <option value="">— Standalone task —</option>
             {projects.map(p=><option key={p.id} value={p.id}>{p.client} ({p.id})</option>)}
           </select>
@@ -979,54 +1385,140 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
         <button onClick={()=>{if(form.title&&form.assignedTo&&form.dueDate)onSaveTask({title:form.title,assignedTo:form.assignedTo,dueDate:form.dueDate,projectId:form.projectId||null,status:"Pending",type:form.projectId?"project":"standalone"});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Task</button>
       </div>
     );
-    if(modal.type==="newLead")return(
+    if(modal.type==="newLead") return(
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div><label style={labelStyle}>Name *</label><input style={inputStyle} value={form.name||""} onChange={e=>set("name",e.target.value)} placeholder="Client / Architect name"/></div>
-        <div><label style={labelStyle}>Type</label>
-          <select style={inputStyle} value={form.type||"End Client"} onChange={e=>set("type",e.target.value)}>
+        <div><label style={lS}>Name *</label><input style={iS} value={form.name||""} onChange={e=>set("name",e.target.value)} placeholder="Client / Architect name"/></div>
+        <div><label style={lS}>Type</label>
+          <select style={iS} value={form.type||"End Client"} onChange={e=>set("type",e.target.value)}>
             {["End Client","Architect","Interior Designer","Developer"].map(t=><option key={t}>{t}</option>)}
           </select>
         </div>
-        <div><label style={labelStyle}>Source</label><input style={inputStyle} value={form.source||""} onChange={e=>set("source",e.target.value)} placeholder="Referral, Exhibition, Instagram…"/></div>
-        <div><label style={labelStyle}>Contact</label><input style={inputStyle} value={form.contact||""} onChange={e=>set("contact",e.target.value)} placeholder="+91 XXXXX XXXXX"/></div>
-        <div><label style={labelStyle}>Follow-up date</label><input type="date" style={inputStyle} value={form.followUpDate||addDays(today(),3)} onChange={e=>set("followUpDate",e.target.value)}/></div>
-        <div><label style={labelStyle}>Notes</label><input style={inputStyle} value={form.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
-        <div><label style={labelStyle}>Assigned to</label>
-          <select style={inputStyle} value={form.assignedTo||currentUser.id} onChange={e=>set("assignedTo",parseInt(e.target.value))}>
+        <div><label style={lS}>Source</label><input style={iS} value={form.source||""} onChange={e=>set("source",e.target.value)} placeholder="Referral, Exhibition, Instagram…"/></div>
+        <div><label style={lS}>Contact</label><input style={iS} value={form.contact||""} onChange={e=>set("contact",e.target.value)} placeholder="+91 XXXXX XXXXX"/></div>
+        <div><label style={lS}>Follow-up date</label><input type="date" style={iS} value={form.followUpDate||addDays(today(),3)} onChange={e=>set("followUpDate",e.target.value)}/></div>
+        <div><label style={lS}>Notes</label><input style={iS} value={form.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
+        <div><label style={lS}>Assigned to</label>
+          <select style={iS} value={form.assignedTo||currentUser.id} onChange={e=>set("assignedTo",parseInt(e.target.value))}>
             {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
         <button onClick={()=>{if(form.name)onSaveLead({name:form.name,type:form.type||"End Client",source:form.source||"",contact:form.contact||"",followUpDate:form.followUpDate||addDays(today(),3),meetingStatus:"Not yet",notes:form.notes||"",assignedTo:form.assignedTo||currentUser.id});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Lead</button>
       </div>
     );
-    if(modal.type==="newProject")return(
+    if(modal.type==="newProject") return(
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div><label style={labelStyle}>Client name *</label><input style={inputStyle} value={form.client||""} onChange={e=>set("client",e.target.value)}/></div>
-        <div><label style={labelStyle}>Source</label><input style={inputStyle} value={form.source||""} onChange={e=>set("source",e.target.value)}/></div>
+        <div><label style={lS}>Client name *</label><input style={iS} value={form.client||""} onChange={e=>set("client",e.target.value)}/></div>
+        <div><label style={lS}>Source</label><input style={iS} value={form.source||""} onChange={e=>set("source",e.target.value)}/></div>
+        <div><label style={lS}>Current Stage *</label>
+          <select style={iS} value={form.stage||"Lead"} onChange={e=>set("stage",e.target.value)}>
+            {STAGES.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
         <div style={{display:"flex",gap:10}}>
-          <div style={{flex:1}}><label style={labelStyle}>Currency</label>
-            <select style={inputStyle} value={form.currency||"INR"} onChange={e=>set("currency",e.target.value)}>
+          <div style={{flex:1}}><label style={lS}>Currency</label>
+            <select style={iS} value={form.currency||"INR"} onChange={e=>set("currency",e.target.value)}>
               {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
             </select>
           </div>
-          <div style={{flex:2}}><label style={labelStyle}>Estimated value</label><input style={inputStyle} value={form.value||""} onChange={e=>set("value",e.target.value)} placeholder="Optional"/></div>
+          <div style={{flex:2}}><label style={lS}>Estimated value</label><input style={iS} value={form.value||""} onChange={e=>set("value",e.target.value)} placeholder="Optional"/></div>
         </div>
-        <div><label style={labelStyle}>Google Drive folder link (optional)</label><input style={inputStyle} value={form.driveLink||""} onChange={e=>set("driveLink",e.target.value)} placeholder="https://drive.google.com/…"/></div>
-        <div><label style={labelStyle}>Assigned to</label>
-          <select style={inputStyle} value={form.assignedTo||currentUser.id} onChange={e=>set("assignedTo",parseInt(e.target.value))}>
+        <div><label style={lS}>Google Drive folder link (optional)</label><input style={iS} value={form.driveLink||""} onChange={e=>set("driveLink",e.target.value)} placeholder="https://drive.google.com/…"/></div>
+        <div><label style={lS}>Assigned to</label>
+          <select style={iS} value={form.assignedTo||currentUser.id} onChange={e=>set("assignedTo",parseInt(e.target.value))}>
             {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
-        <div><label style={labelStyle}>Follow-up date</label><input type="date" style={inputStyle} value={form.followUpDate||addDays(today(),5)} onChange={e=>set("followUpDate",e.target.value)}/></div>
-        <button onClick={()=>{if(form.client)onSaveProject({client:form.client,source:form.source||"",stage:"Lead",currency:form.currency||"INR",value:form.value||"—",driveLink:form.driveLink||"",assignedTo:[form.assignedTo||currentUser.id],followUpDate:form.followUpDate||addDays(today(),5)});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Create Project</button>
+        <div><label style={lS}>Follow-up date</label><input type="date" style={iS} value={form.followUpDate||addDays(today(),5)} onChange={e=>set("followUpDate",e.target.value)}/></div>
+        <button onClick={()=>{if(form.client){const s=form.stage||"Lead";onSaveProject({client:form.client,source:form.source||"",stage:s,currency:form.currency||"INR",value:form.value||"—",driveLink:form.driveLink||"",assignedTo:[form.assignedTo||currentUser.id],followUpDate:form.followUpDate||addDays(today(),5),stageHistory:[{stage:s,date:today(),by:currentUser.name}]});}}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Create Project</button>
       </div>
     );
+    if(modal.type==="newQuotation") return(
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div><label style={lS}>Linked Project</label>
+          <select style={iS} value={form.projectId||""} onChange={e=>set("projectId",e.target.value)}>
+            <option value="">— Select project —</option>
+            {projects.map(p=><option key={p.id} value={p.id}>{p.client} ({p.id})</option>)}
+          </select>
+        </div>
+        <div><label style={lS}>Client name *</label><input style={iS} value={form.client||""} onChange={e=>set("client",e.target.value)} placeholder="Type client name"/></div>
+        <div><label style={lS}>Supplier *</label><input style={iS} value={form.supplier||""} onChange={e=>set("supplier",e.target.value)} placeholder="e.g. Flos Italy"/></div>
+        <div style={{display:"flex",gap:10}}>
+          <div style={{flex:1}}><label style={lS}>Currency</label>
+            <select style={iS} value={form.currency||"EUR"} onChange={e=>set("currency",e.target.value)}>
+              {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div style={{flex:2}}><label style={lS}>Value *</label><input type="number" style={iS} value={form.value||""} onChange={e=>set("value",e.target.value)} placeholder="Amount"/></div>
+        </div>
+        <div><label style={lS}>Sent Date</label><input type="date" style={iS} value={form.sentDate||today()} onChange={e=>set("sentDate",e.target.value)}/></div>
+        <div><label style={lS}>Follow-up Date</label><input type="date" style={iS} value={form.followUpDate||addDays(today(),7)} onChange={e=>set("followUpDate",e.target.value)}/></div>
+        <div><label style={lS}>Status</label>
+          <select style={iS} value={form.status||"Awaiting reply"} onChange={e=>set("status",e.target.value)}>
+            {["Awaiting reply","Confirmed","Rejected","Revised"].map(s=><option key={s}>{s}</option>)}
+          </select>
+        </div>
+        <button onClick={()=>{if(form.client&&form.supplier&&form.value)onModalSave({id:"Q"+Date.now(),projectId:form.projectId||"",client:form.client,supplier:form.supplier,currency:form.currency||"EUR",value:parseFloat(form.value),sentDate:form.sentDate||today(),followUpDate:form.followUpDate||addDays(today(),7),status:form.status||"Awaiting reply"});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Quotation</button>
+      </div>
+    );
+    if(modal.type==="newOrder") return(
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div><label style={lS}>Linked Project *</label>
+          <select style={iS} value={form.projectId||""} onChange={e=>set("projectId",e.target.value)}>
+            <option value="">— Select project —</option>
+            {projects.map(p=><option key={p.id} value={p.id}>{p.client} ({p.id})</option>)}
+          </select>
+        </div>
+        <div><label style={lS}>Vendor / Supplier *</label><input style={iS} value={form.vendor||""} onChange={e=>set("vendor",e.target.value)} placeholder="e.g. Artemide SRL"/></div>
+        <div style={{display:"flex",gap:10}}>
+          <div style={{flex:1}}><label style={lS}>Currency</label>
+            <select style={iS} value={form.currency||"EUR"} onChange={e=>set("currency",e.target.value)}>
+              {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div style={{flex:2}}><label style={lS}>Order Value *</label><input type="number" style={iS} value={form.value||""} onChange={e=>set("value",e.target.value)} placeholder="Amount"/></div>
+        </div>
+        <div><label style={lS}>PO Number</label><input style={iS} value={form.poNumber||""} onChange={e=>set("poNumber",e.target.value)} placeholder="e.g. PO-2026-0001"/></div>
+        <div><label style={lS}>Order Date</label><input type="date" style={iS} value={form.orderDate||today()} onChange={e=>set("orderDate",e.target.value)}/></div>
+        <div><label style={lS}>Expected ETA</label><input type="date" style={iS} value={form.eta||addDays(today(),30)} onChange={e=>set("eta",e.target.value)}/></div>
+        <div><label style={lS}>Tracking Number (optional)</label><input style={iS} value={form.trackingNumber||""} onChange={e=>set("trackingNumber",e.target.value)} placeholder="Optional"/></div>
+        <div><label style={lS}>Status</label>
+          <select style={iS} value={form.status||"Ordered"} onChange={e=>set("status",e.target.value)}>
+            {["Ordered","In Transit","Delivered","Cancelled"].map(s=><option key={s}>{s}</option>)}
+          </select>
+        </div>
+        <button onClick={()=>{if(form.vendor&&form.value&&form.projectId)onModalSave({id:"O"+Date.now(),projectId:form.projectId,vendor:form.vendor,currency:form.currency||"EUR",value:parseFloat(form.value),poNumber:form.poNumber||"",orderDate:form.orderDate||today(),expectedDispatch:"",trackingNumber:form.trackingNumber||"",dispatchDate:"",eta:form.eta||addDays(today(),30),status:form.status||"Ordered"});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Order</button>
+      </div>
+    );
+    if(modal.type==="newPayment") return(
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div><label style={lS}>Linked Project</label>
+          <select style={iS} value={form.projectId||""} onChange={e=>set("projectId",e.target.value)}>
+            <option value="">— Select project —</option>
+            {projects.map(p=><option key={p.id} value={p.id}>{p.client} ({p.id})</option>)}
+          </select>
+        </div>
+        <div><label style={lS}>Client name *</label><input style={iS} value={form.client||""} onChange={e=>set("client",e.target.value)}/></div>
+        <div><label style={lS}>Supplier *</label><input style={iS} value={form.supplier||""} onChange={e=>set("supplier",e.target.value)}/></div>
+        <div style={{display:"flex",gap:10}}>
+          <div style={{flex:1}}><label style={lS}>Currency</label>
+            <select style={iS} value={form.currency||"EUR"} onChange={e=>set("currency",e.target.value)}>
+              {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div style={{flex:2}}><label style={lS}>Total Order Value</label><input type="number" style={iS} value={form.totalAmount||""} onChange={e=>set("totalAmount",e.target.value)}/></div>
+        </div>
+        <div><label style={lS}>Linked Order ID (optional)</label><input style={iS} value={form.orderId||""} onChange={e=>set("orderId",e.target.value)} placeholder="e.g. O1234567890"/></div>
+        <div><label style={lS}>Notes</label><input style={iS} value={form.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
+        <button onClick={()=>{if(form.client&&form.supplier)onModalSave({id:"PAY"+Date.now(),projectId:form.projectId||"",orderId:form.orderId||"",client:form.client,supplier:form.supplier,currency:form.currency||"EUR",totalAmount:parseFloat(form.totalAmount)||0,notes:form.notes||"",subPayments:[]});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Payment Record</button>
+      </div>
+    );
+    return null;
   };
-  const titles={newTask:"New Task",newLead:"New Lead",newProject:"New Project"};
+
   return(
     <div style={{position:"fixed",inset:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{position:"absolute",inset:0,background:"#00000060"}} onClick={onClose}/>
-      <div style={{position:"relative",background:"#fff",borderRadius:12,padding:24,width:420,maxHeight:"90vh",overflowY:"auto",zIndex:1}}>
+      <div style={{position:"relative",background:"#fff",borderRadius:12,padding:24,width:440,maxHeight:"90vh",overflowY:"auto",zIndex:1}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <h3 style={{margin:0,fontSize:16,fontWeight:800}}>{titles[modal.type]}</h3>
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:"#888"}}>✕</button>
