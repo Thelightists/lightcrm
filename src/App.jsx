@@ -126,6 +126,26 @@ const NotesPanel = ({ comments=[], onAdd, currentUser, label="Comments & Notes" 
   );
 };
 
+
+// ─── Shared SearchBar ─────────────────────────────────────────────────────────
+const SearchBar = ({ value, onChange, placeholder = "Search…" }) => (
+  <div style={{ position:"relative", flex:1, minWidth:180, maxWidth:340 }}>
+    <span style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", fontSize:14, color:"#aaa", pointerEvents:"none" }}>🔍</span>
+    <input
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      style={{ width:"100%", border:"1px solid #ddd", borderRadius:7, padding:"7px 10px 7px 32px",
+        fontSize:13, fontFamily:"inherit", background:"#fff", boxSizing:"border-box", outline:"none" }}
+    />
+    {value && (
+      <button onClick={() => onChange("")}
+        style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", background:"none",
+          border:"none", cursor:"pointer", fontSize:16, color:"#aaa", padding:0, lineHeight:1 }}>✕</button>
+    )}
+  </div>
+);
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function LightCRM() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -482,14 +502,19 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
 // ─── Projects ─────────────────────────────────────────────────────────────────
 function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects}){
   const [filter,setFilter]=useState("all");
-  const filtered=filter==="all"?projects:projects.filter(p=>p.stage===filter);
+  const [search,setSearch]=useState("");
+  const filtered=(filter==="all"?projects:projects.filter(p=>p.stage===filter))
+    .filter(p=>!search||p.client.toLowerCase().includes(search.toLowerCase())||p.id.toLowerCase().includes(search.toLowerCase())||(p.source||"").toLowerCase().includes(search.toLowerCase()));
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <select value={filter} onChange={e=>setFilter(e.target.value)} style={{border:"1px solid #ddd",borderRadius:6,padding:"6px 10px",fontSize:13,fontFamily:"inherit"}}>
-          <option value="all">All Stages</option>
-          {STAGES.map(s=><option key={s} value={s}>{s}</option>)}
-        </select>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,gap:10,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flex:1,flexWrap:"wrap"}}>
+          <select value={filter} onChange={e=>setFilter(e.target.value)} style={{border:"1px solid #ddd",borderRadius:6,padding:"6px 10px",fontSize:13,fontFamily:"inherit"}}>
+            <option value="all">All Stages</option>
+            {STAGES.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          <SearchBar value={search} onChange={setSearch} placeholder="Search by client, architect…"/>
+        </div>
         <button onClick={()=>setModal({type:"newProject"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Project</button>
       </div>
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
@@ -539,6 +564,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
   const [statusFilter,setStatusFilter]=useState("active");
   const [dateFilter,setDateFilter]=useState("");
   const [filterMonth,setFilterMonth]=useState(new Date().getMonth());
+  const [search,setSearch]=useState("");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
   const updateLead=(id,patch)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,...patch}:l));
   const addComment=(id,text)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,comments:[...(l.comments||[]),{by:currentUser.name,date:today(),text}]}:l));
@@ -553,10 +579,11 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
 
   const filtered = leads.filter(l => {
     const s = getLeadStatus(l);
-    if (statusFilter === "active") return s === "active";
-    if (statusFilter === "converted") return s === "converted";
-    if (statusFilter === "dead") return s === "dead";
-    return true;
+    const statusOk = statusFilter==="active"?s==="active":statusFilter==="converted"?s==="converted":statusFilter==="dead"?s==="dead":true;
+    if (!statusOk) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (l.name||"").toLowerCase().includes(q)||(l.firm||"").toLowerCase().includes(q)||(l.city||"").toLowerCase().includes(q)||(l.contact||"").toLowerCase().includes(q)||(l.source||"").toLowerCase().includes(q)||(l.notes||"").toLowerCase().includes(q);
   });
 
   const counts = {
@@ -646,7 +673,10 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
             </button>
           ))}
         </div>
-        <button onClick={()=>setModal({type:"newLead"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Lead</button>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <SearchBar value={search} onChange={setSearch} placeholder="Search name, firm, city…"/>
+          <button onClick={()=>setModal({type:"newLead"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Lead</button>
+        </div>
       </div>
 
       {filtered.length===0&&(
@@ -739,11 +769,22 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
 function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProject}){
   const [expanded,setExpanded]=useState(null);
   const [editing,setEditing]=useState({});
+  const [search,setSearch]=useState("");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit"};
   const updateQ=(id,patch)=>setQuotations(qs=>qs.map(q=>q.id===id?{...q,...patch}:q));
 
   // Projects auto-appearing based on stage
-  const projQuotations=projects.filter(p=>["Quotation Requested from Supplier","Quotation Sent"].includes(p.stage));
+  const projQuotations=projects.filter(p=>{
+    if(!["Quotation Requested from Supplier","Quotation Sent"].includes(p.stage))return false;
+    if(!search)return true;
+    const q=search.toLowerCase();
+    return(p.client||"").toLowerCase().includes(q)||(p.source||"").toLowerCase().includes(q);
+  });
+  const manualQFiltered=quotations.filter(q=>{
+    if(!search)return true;
+    const s=search.toLowerCase();
+    return(q.client||"").toLowerCase().includes(s)||(q.supplier||"").toLowerCase().includes(s);
+  });
   // Manual quotation entries
   const manualQ=quotations;
 
@@ -756,8 +797,9 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:4}}>
-        <button onClick={()=>setModal({type:"newQuotation",onSave:(q)=>{setQuotations(qs=>[...qs,q])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Quotation</button>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10}}>
+        <SearchBar value={search} onChange={setSearch} placeholder="Search client, supplier…"/>
+        <button onClick={()=>setModal({type:"newQuotation",onSave:(q)=>{setQuotations(qs=>[...qs,q])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Quotation</button>
       </div>
 
       {/* Auto-populated from Projects */}
@@ -784,9 +826,9 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
       })}
 
       {/* Manual quotation entries */}
-      {manualQ.length>0&&<>
-        <SectionHeader label="Additional Quotation Details" count={manualQ.length}/>
-        {manualQ.map(q=>{
+      {manualQFiltered.length>0&&<>
+        <SectionHeader label="Additional Quotation Details" count={manualQFiltered.length}/>
+        {manualQFiltered.map(q=>{
           const isOpen=expanded===q.id;const ed=editing[q.id]||{};
           return(
             <div key={q.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
@@ -836,10 +878,21 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
 // ─── Orders ───────────────────────────────────────────────────────────────────
 function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
   const [expanded,setExpanded]=useState(null);const [editing,setEditing]=useState({});
+  const [search,setSearch]=useState("");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
   const updateO=(id,patch)=>setOrders(os=>os.map(o=>o.id===id?{...o,...patch}:o));
 
-  const projOrders=projects.filter(p=>["Order Confirmed","Fixtures Ordered","In Transit"].includes(p.stage));
+  const projOrders=projects.filter(p=>{
+    if(!["Order Confirmed","Fixtures Ordered","In Transit"].includes(p.stage))return false;
+    if(!search)return true;
+    return(p.client||"").toLowerCase().includes(search.toLowerCase());
+  });
+  const filteredOrders=orders.filter(o=>{
+    if(!search)return true;
+    const proj=projects.find(p=>p.id===o.projectId);
+    const q=search.toLowerCase();
+    return(proj?.client||"").toLowerCase().includes(q)||(o.vendor||"").toLowerCase().includes(q)||(o.poNumber||"").toLowerCase().includes(q);
+  });
 
   const SectionHeader=({label,count})=>(
     <div style={{display:"flex",alignItems:"center",gap:8,margin:"8px 0 4px"}}>
@@ -850,8 +903,9 @@ function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:4}}>
-        <button onClick={()=>setModal({type:"newOrder",onSave:(o)=>{setOrders(os=>[...os,o])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Order</button>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10}}>
+        <SearchBar value={search} onChange={setSearch} placeholder="Search client, vendor, PO…"/>
+        <button onClick={()=>setModal({type:"newOrder",onSave:(o)=>{setOrders(os=>[...os,o])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Order</button>
       </div>
 
       <SectionHeader label="From Projects" count={projOrders.length}/>
@@ -874,9 +928,9 @@ function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
         );
       })}
 
-      {orders.length>0&&<>
-        <SectionHeader label="Order Details" count={orders.length}/>
-        {orders.map(o=>{
+      {filteredOrders.length>0&&<>
+        <SectionHeader label="Order Details" count={filteredOrders.length}/>
+        {filteredOrders.map(o=>{
           const proj=projects.find(p=>p.id===o.projectId);const isOpen=expanded===o.id;const ed=editing[o.id]||{};
           return(
             <div key={o.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
@@ -926,6 +980,7 @@ function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
 // ─── Payments ─────────────────────────────────────────────────────────────────
 function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
   const [expanded,setExpanded]=useState(null);const [showAddSub,setShowAddSub]=useState(null);const [subForm,setSubForm]=useState({});
+  const [search,setSearch]=useState("");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"5px 8px",fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
   const updateSubPayment=(payId,spId,patch)=>setPayments(ps=>ps.map(p=>p.id!==payId?p:{...p,subPayments:p.subPayments.map(sp=>sp.id!==spId?sp:{...sp,...patch})}));
   const addSubPayment=(payId)=>{
@@ -940,7 +995,11 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
         <div style={{background:"#fff3cd",border:"1px solid #ffc107",borderRadius:8,padding:"8px 14px",fontSize:12,color:"#856404",flex:1,marginRight:12}}>🔒 Visible to Aman, Mohini, and Ram only</div>
         <button onClick={()=>setModal({type:"newPayment",onSave:(p)=>{setPayments(ps=>[...ps,p])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Payment</button>
       </div>
-      {payments.map(pay=>{
+      {payments.filter(pay=>{
+        if(!search)return true;
+        const q=search.toLowerCase();
+        return(pay.client||"").toLowerCase().includes(q)||(pay.supplier||"").toLowerCase().includes(q);
+      }).map(pay=>{
         const isOpen=expanded===pay.id;
         const totalMade=pay.subPayments.filter(s=>s.type==="made"&&s.status==="Confirmed").reduce((a,s)=>a+s.amount,0);
         const totalPending=pay.subPayments.filter(s=>s.status==="Pending").reduce((a,s)=>a+s.amount,0);
@@ -1035,7 +1094,12 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
 
 // ─── Delivery & Install ───────────────────────────────────────────────────────
 function DeliveryTab({projects,tasks,setDrawerProject}){
-  const relevant=projects.filter(p=>["Fixtures Ordered","In Transit","Delivered","Installation","Closed"].includes(p.stage));
+  const [search,setSearch]=useState("");
+  const relevant=projects.filter(p=>{
+    if(!["Fixtures Ordered","In Transit","Delivered","Installation","Closed"].includes(p.stage))return false;
+    if(!search)return true;
+    return(p.client||"").toLowerCase().includes(search.toLowerCase());
+  });
   const SectionHeader=({label,count,color})=>(
     <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0 4px"}}>
       <span style={{fontSize:11,fontWeight:700,color:color||"#888",textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span>
@@ -1051,6 +1115,9 @@ function DeliveryTab({projects,tasks,setDrawerProject}){
   ];
   return(
     <div style={{display:"flex",flexDirection:"column",gap:4}}>
+      <div style={{marginBottom:12}}>
+        <SearchBar value={search} onChange={setSearch} placeholder="Search client…"/>
+      </div>
       {groups.map(g=>{
         const gProjects=relevant.filter(p=>g.stages.includes(p.stage));
         if(gProjects.length===0)return null;
@@ -1104,6 +1171,8 @@ function DeliveryTab({projects,tasks,setDrawerProject}){
 function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDrawerProject}){
   const [statusFilter,setStatusFilter]=useState("all");
   const [memberFilter,setMemberFilter]=useState("all");
+  const [search,setSearch]=useState("");
+  const [sectionFilter,setSectionFilter]=useState("all"); // "all"|"leads"|"projects"|"tasks"
 
   const tomorrow = () => { const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().split("T")[0]; };
   const daysDiff2 = (date) => { const diff=(new Date(date)-new Date(today()))/(1000*60*60*24); return Math.round(diff); };
@@ -1125,8 +1194,23 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
   const filteredTasks = tasks.filter(t => {
     const statusOk = statusFilter==="all" ? true : statusFilter==="Pending"||statusFilter==="Done" ? t.status===statusFilter : true;
     const memberOk = memberFilter==="all" ? true : t.assignedTo===parseInt(memberFilter);
-    return statusOk && memberOk;
-  }).filter(t => statusFilter==="mine" ? t.assignedTo===currentUser.id : true);
+    const mineOk = statusFilter==="mine" ? t.assignedTo===currentUser.id : true;
+    const proj = projects.find(p=>p.id===t.projectId);
+    const searchOk = !search || (t.title||"").toLowerCase().includes(search.toLowerCase()) || (proj?.client||"").toLowerCase().includes(search.toLowerCase()) || (getMember(t.assignedTo,TEAM)?.name||"").toLowerCase().includes(search.toLowerCase());
+    return statusOk && memberOk && mineOk && searchOk;
+  });
+
+  // Filter follow-up sections by search + member
+  const filtFollowLeads = followUpLeads.filter(l => {
+    const memberOk = memberFilter==="all" ? true : l.assignedTo===parseInt(memberFilter);
+    const searchOk = !search || (l.name||"").toLowerCase().includes(search.toLowerCase()) || (l.firm||"").toLowerCase().includes(search.toLowerCase());
+    return memberOk && searchOk;
+  });
+  const filtFollowProjects = followUpProjects.filter(p => {
+    const memberOk = memberFilter==="all" ? true : p.assignedTo?.includes(parseInt(memberFilter));
+    const searchOk = !search || (p.client||"").toLowerCase().includes(search.toLowerCase());
+    return memberOk && searchOk;
+  });
 
   const SectionHeader = ({label, count, color}) => (
     <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0 6px"}}>
@@ -1138,29 +1222,39 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
   return(
     <div>
       {/* Controls */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {/* Status filters */}
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+        {/* Row 1: Section filter + New Task */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {[["all","All Sections"],["leads","Lead Follow-ups"],["projects","Project Follow-ups"],["tasks","Tasks Only"]].map(([f,label])=>(
+              <button key={f} onClick={()=>setSectionFilter(f)} style={{background:sectionFilter===f?"#1a1a2e":"#fff",color:sectionFilter===f?"#fff":"#555",border:"1px solid #ddd",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:sectionFilter===f?700:400}}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <button onClick={()=>setModal({type:"newTask"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Task</button>
+        </div>
+        {/* Row 2: Search + status + member */}
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <SearchBar value={search} onChange={setSearch} placeholder="Search tasks, leads, projects…"/>
           {[["all","All"],["mine","Mine"],["Pending","Pending"],["Done","Done"]].map(([f,label])=>(
-            <button key={f} onClick={()=>setStatusFilter(f)} style={{background:statusFilter===f?"#1a1a2e":"#fff",color:statusFilter===f?"#fff":"#555",border:"1px solid #ddd",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            <button key={f} onClick={()=>setStatusFilter(f)} style={{background:statusFilter===f?"#533483":"#fff",color:statusFilter===f?"#fff":"#555",border:"1px solid #ddd",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
               {label}
             </button>
           ))}
-          {/* Member filter */}
           <select value={memberFilter} onChange={e=>setMemberFilter(e.target.value)}
-            style={{border:"1px solid #ddd",borderRadius:6,padding:"5px 10px",fontSize:12,fontFamily:"inherit",background:memberFilter!=="all"?"#1a1a2e":"#fff",color:memberFilter!=="all"?"#fff":"#555"}}>
+            style={{border:"1px solid #ddd",borderRadius:6,padding:"5px 8px",fontSize:11,fontFamily:"inherit",background:memberFilter!=="all"?"#533483":"#fff",color:memberFilter!=="all"?"#fff":"#555"}}>
             <option value="all">All Members</option>
             {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
-        <button onClick={()=>setModal({type:"newTask"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Task</button>
       </div>
 
       {/* Auto-populated: Lead follow-ups */}
-      {followUpLeads.length>0 && <>
-        <SectionHeader label="Lead Follow-ups Due" count={followUpLeads.length} color="#533483"/>
+      {(sectionFilter==="all"||sectionFilter==="leads") && filtFollowLeads.length>0 && <>
+        <SectionHeader label="Lead Follow-ups Due" count={filtFollowLeads.length} color="#533483"/>
         <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
-          {followUpLeads.map(l=>{
+          {filtFollowLeads.map(l=>{
             const diff=daysDiff2(l.followUpDate);
             const isPast=diff<0; const isToday=diff===0; const isTomorrow=diff===1;
             const borderColor=isPast?"#c0392b":isToday?"#c9a84c":"#533483";
@@ -1183,10 +1277,10 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
       </>}
 
       {/* Auto-populated: Project follow-ups */}
-      {followUpProjects.length>0 && <>
-        <SectionHeader label="Project Follow-ups Due" count={followUpProjects.length} color="#c0392b"/>
+      {(sectionFilter==="all"||sectionFilter==="projects") && filtFollowProjects.length>0 && <>
+        <SectionHeader label="Project Follow-ups Due" count={filtFollowProjects.length} color="#c0392b"/>
         <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
-          {followUpProjects.map(p=>{
+          {filtFollowProjects.map(p=>{
             const diff=daysDiff2(p.followUpDate);
             const isToday=diff===0;
             const isTomorrow=diff===1;
@@ -1214,6 +1308,7 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
       </>}
 
       {/* Manual tasks */}
+      {(sectionFilter==="all"||sectionFilter==="tasks") && <>
       <SectionHeader label="Tasks" count={filteredTasks.length} color="#555"/>
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
@@ -1262,6 +1357,7 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
           </tbody>
         </table>
       </div>
+      </>}
     </div>
   );
 }
