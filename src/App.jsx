@@ -51,7 +51,7 @@ const TEAM = [
 const STAGES = [
   "Lead","Meeting Done","Design Started","Quotation Requested from Supplier",
   "Quotation Sent","Order Confirmed","Fixtures Ordered","In Transit",
-  "Delivered","Installation","Closed"
+  "Delivered","Installation","Project on Hold","Closed"
 ];
 
 const today    = () => new Date().toISOString().split("T")[0];
@@ -505,6 +505,8 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
   const [expanded,setExpanded]=useState(null);
   const [editing,setEditing]=useState({});
   const [statusFilter,setStatusFilter]=useState("active");
+  const [dateFilter,setDateFilter]=useState("");
+  const [filterMonth,setFilterMonth]=useState(new Date().getMonth());
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
   const updateLead=(id,patch)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,...patch}:l));
   const addComment=(id,text)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,comments:[...(l.comments||[]),{by:currentUser.name,date:today(),text}]}:l));
@@ -539,10 +541,63 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
     { id:"all",     label:"All",       color:"#1a1a2e" },
   ];
 
+  // Date/month filter helpers
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+
+  // Mini dashboard stats — based on date filter
+  const statsLeads = leads.filter(l => {
+    if (!dateFilter) return true;
+    const d = new Date(l.followUpDate||"");
+    if (dateFilter === "today") return (l.followUpDate||"") === today();
+    if (dateFilter === "month") return d.getMonth() === filterMonth && d.getFullYear() === currentYear;
+    return true;
+  });
+  const newLeadsCount = statsLeads.filter(l => {
+    const lStatus = l.leadStatus || (l.meetingStatus==="Converted"?"converted":"active");
+    return lStatus === "active";
+  }).length;
+  const meetingDoneCount = statsLeads.filter(l => ["Met","Meeting scheduled"].includes(l.meetingStatus)).length;
+  const convertedCount = statsLeads.filter(l => l.meetingStatus==="Converted"||l.leadStatus==="converted").length;
+  const deadCount = statsLeads.filter(l => l.leadStatus==="dead").length;
+
   return(
     <div>
+      {/* Mini Dashboard */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
+        {[
+          {label:"Active Leads",value:newLeadsCount,color:"#2d6a4f"},
+          {label:"Meetings Done",value:meetingDoneCount,color:"#0f3460"},
+          {label:"Converted",value:convertedCount,color:"#533483"},
+          {label:"Dead",value:deadCount,color:"#888"},
+        ].map(s=>(
+          <div key={s.label} style={{background:"#fff",borderRadius:10,padding:"12px 16px",borderLeft:`4px solid ${s.color}`}}>
+            <div style={{fontSize:22,fontWeight:800,color:s.color}}>{s.value}</div>
+            <div style={{fontSize:11,fontWeight:700,color:"#555",marginTop:2}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Date / Month filter row */}
+      <div style={{background:"#fff",borderRadius:10,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:12,fontWeight:700,color:"#555"}}>Filter by:</span>
+        {[["","All time"],["today","Today"],["month","Month"]].map(([v,label])=>(
+          <button key={v} onClick={()=>setDateFilter(v)} style={{background:dateFilter===v?"#1a1a2e":"#f5f5f7",color:dateFilter===v?"#fff":"#555",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:dateFilter===v?700:400}}>
+            {label}
+          </button>
+        ))}
+        {dateFilter==="month"&&(
+          <select value={filterMonth} onChange={e=>setFilterMonth(parseInt(e.target.value))}
+            style={{border:"1px solid #ddd",borderRadius:6,padding:"5px 10px",fontSize:12,fontFamily:"inherit"}}>
+            {MONTHS.map((m,i)=><option key={i} value={i}>{m} {currentYear}</option>)}
+          </select>
+        )}
+        {dateFilter==="today"&&<span style={{fontSize:11,color:"#888"}}>Showing activity for {today()}</span>}
+      </div>
+
       {/* Header with filters */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {filterConfig.map(f=>(
             <button key={f.id} onClick={()=>setStatusFilter(f.id)} style={{
@@ -584,11 +639,19 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
                       {lStatus}
                     </span>
                   </div>
-                  <div style={{fontSize:11,color:"#888"}}>{l.type} · {l.source} · {l.contact}</div>
+                  <div style={{fontSize:11,color:"#888"}}>
+                    {l.firm&&<span style={{fontWeight:600,color:"#555"}}>{l.firm} · </span>}
+                    {l.type} · {l.source} · {l.contact}
+                  </div>
                 </div>
                 <Badge label={l.meetingStatus} color={l.meetingStatus==="Met"?"#2d6a4f":"#533483"}/>
                 <span style={{fontSize:12,color:overdue?"#c0392b":"#555",fontWeight:overdue?700:400}}>{overdue?"🔴 ":"📅 "}{l.followUpDate}</span>
                 <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
+                {currentUser.role==="operations"&&(
+                  <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete lead: "+l.name+"? This cannot be undone."))setLeads(ls=>ls.filter(x=>x.id!==l.id));}}
+                    style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#c0392b",marginLeft:4}}
+                    title="Delete lead (Mohini only)">🗑</button>
+                )}
               </div>
               {isOpen&&(
                 <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px",display:"flex",flexDirection:"column",gap:14}}>
@@ -606,12 +669,15 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>FOLLOW-UP DATE</div>
                       <input type="date" value={ed.followUpDate??l.followUpDate??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],followUpDate:e.target.value}}))} style={inputS}/>
                     </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>FIRM / COMPANY</div>
+                      <input value={ed.firm??l.firm??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],firm:e.target.value}}))} style={inputS} placeholder="Firm or company name…"/>
+                    </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>ASSIGNED TO</div>
                       <select value={ed.assignedTo??l.assignedTo} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],assignedTo:parseInt(e.target.value)}}))} style={inputS}>
                         {TEAM.map(tm=><option key={tm.id} value={tm.id}>{tm.name}</option>)}
                       </select>
                     </div>
-                    <div style={{gridColumn:"2 / -1"}}><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>NOTES</div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>NOTES</div>
                       <input value={ed.notes??l.notes??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],notes:e.target.value}}))} style={inputS} placeholder="Update notes…"/>
                     </div>
                   </div>
@@ -695,6 +761,11 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
                 <span style={{fontWeight:700}}>{currencySymbol[q.currency]}{Number(q.value).toLocaleString()}</span>
                 <Badge label={q.status} color={q.status==="Confirmed"?"#2d6a4f":"#533483"}/>
                 <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
+                {currentUser.role==="operations"&&(
+                  <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete lead: "+l.name+"? This cannot be undone."))setLeads(ls=>ls.filter(x=>x.id!==l.id));}}
+                    style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#c0392b",marginLeft:4}}
+                    title="Delete lead (Mohini only)">🗑</button>
+                )}
               </div>
               {isOpen&&(
                 <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
@@ -780,6 +851,11 @@ function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
                 <span style={{fontWeight:700}}>{currencySymbol[o.currency]}{Number(o.value).toLocaleString()}</span>
                 <Badge label={o.status} color="#0f3460"/>
                 <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
+                {currentUser.role==="operations"&&(
+                  <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete lead: "+l.name+"? This cannot be undone."))setLeads(ls=>ls.filter(x=>x.id!==l.id));}}
+                    style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#c0392b",marginLeft:4}}
+                    title="Delete lead (Mohini only)">🗑</button>
+                )}
               </div>
               {isOpen&&(
                 <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
@@ -1002,9 +1078,11 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
     if (!p.followUpDate || p.stage === "Closed") return false;
     return daysDiff2(p.followUpDate) <= 1;
   });
-  // Leads that need follow-up
+  // Leads that need follow-up — exclude dead leads
   const followUpLeads = leads.filter(l => {
     if (!l.followUpDate) return false;
+    const lStatus = l.leadStatus || (l.meetingStatus === "Converted" ? "converted" : "active");
+    if (lStatus === "dead") return false;
     return daysDiff2(l.followUpDate) <= 1;
   });
 
@@ -1388,6 +1466,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
     if(modal.type==="newLead") return(
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div><label style={lS}>Name *</label><input style={iS} value={form.name||""} onChange={e=>set("name",e.target.value)} placeholder="Client / Architect name"/></div>
+        <div><label style={lS}>Firm / Company Name</label><input style={iS} value={form.firm||""} onChange={e=>set("firm",e.target.value)} placeholder="e.g. Design Associates, Self"/></div>
         <div><label style={lS}>Type</label>
           <select style={iS} value={form.type||"End Client"} onChange={e=>set("type",e.target.value)}>
             {["End Client","Architect","Interior Designer","Developer"].map(t=><option key={t}>{t}</option>)}
@@ -1402,13 +1481,13 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
             {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
-        <button onClick={()=>{if(form.name)onSaveLead({name:form.name,type:form.type||"End Client",source:form.source||"",contact:form.contact||"",followUpDate:form.followUpDate||addDays(today(),3),meetingStatus:"Not yet",notes:form.notes||"",assignedTo:form.assignedTo||currentUser.id});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Lead</button>
+        <button onClick={()=>{if(form.name)onSaveLead({name:form.name,firm:form.firm||"",type:form.type||"End Client",source:form.source||"",contact:form.contact||"",followUpDate:form.followUpDate||addDays(today(),3),meetingStatus:"Not yet",notes:form.notes||"",assignedTo:form.assignedTo||currentUser.id});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Lead</button>
       </div>
     );
     if(modal.type==="newProject") return(
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div><label style={lS}>Client name *</label><input style={iS} value={form.client||""} onChange={e=>set("client",e.target.value)}/></div>
-        <div><label style={lS}>Source</label><input style={iS} value={form.source||""} onChange={e=>set("source",e.target.value)}/></div>
+        <div><label style={lS}>Architect / Referral Name</label><input style={iS} value={form.source||""} onChange={e=>set("source",e.target.value)} placeholder="e.g. Priya Sharma, Direct, Walk-in…"/></div>
         <div><label style={lS}>Current Stage *</label>
           <select style={iS} value={form.stage||"Lead"} onChange={e=>set("stage",e.target.value)}>
             {STAGES.map(s=><option key={s} value={s}>{s}</option>)}
