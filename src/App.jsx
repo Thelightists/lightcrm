@@ -256,7 +256,6 @@ export default function LightCRM() {
             <span style={{color:"#fff",fontWeight:800,fontSize:17,letterSpacing:"-0.4px"}}>The Lightists</span>
             <span style={{color:"#c9a84c",fontWeight:500,fontSize:11,letterSpacing:"2px",textTransform:"uppercase"}}>CRM</span>
           </div>
-          <span style={{color:"#c9a84c",fontSize:10,fontWeight:600,background:"#c9a84c22",border:"1px solid #c9a84c44",borderRadius:4,padding:"1px 6px"}}>Phase 2 · Live</span>
           {saving && <Spinner text={saving}/>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -415,33 +414,30 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
   );
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
-      {/* Pipeline + Awarded banner */}
+      {/* Pipeline (Quoted) + Awarded (Order) banner — from manual project values */}
       {(() => {
-        const parseVal = (v,cur) => {
-          if(!v||v==="—") return null;
-          const n = parseFloat(String(v).replace(/[^0-9.]/g,""));
-          if(isNaN(n)) return null;
-          const sym = cur==="EUR"?"€":cur==="USD"?"$":cur==="GBP"?"£":"₹";
-          return {n, sym, cur};
-        };
-        const pipelineProjects = projects.filter(p=>["Quotation Sent","Quotation Requested from Supplier"].includes(p.stage));
-        const awardedProjects = projects.filter(p=>["Order Confirmed","Fixtures Ordered","In Transit","Delivered","Installation","Closed"].includes(p.stage));
-        const sumByCur = (ps) => {
+        const sym = (cur) => cur==="EUR"?"€":cur==="USD"?"$":cur==="GBP"?"£":"₹";
+        const sumField = (field) => {
           const map = {};
-          ps.forEach(p => { const r=parseVal(p.value,p.currency); if(r){map[r.cur]=(map[r.cur]||0)+r.n;} });
-          return Object.entries(map).map(([cur,n])=>{ const sym=cur==="EUR"?"€":cur==="USD"?"$":cur==="GBP"?"£":"₹"; return `${sym}${n.toLocaleString()}`; }).join("  +  ")||"—";
+          projects.forEach(p => {
+            const v = parseFloat(p[field]);
+            if (!isNaN(v) && v > 0) { const cur = p.currency||"INR"; map[cur]=(map[cur]||0)+v; }
+          });
+          return Object.entries(map).map(([c,n])=>`${sym(c)}${n.toLocaleString()}`).join("  +  ")||"—";
         };
+        const quotedCount = projects.filter(p=>p.isQuoted&&parseFloat(p.quotedValue)>0).length;
+        const orderedCount = projects.filter(p=>p.isOrdered&&parseFloat(p.orderValue)>0).length;
         return (
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <div style={{background:"linear-gradient(135deg,#1a1a2e,#0f3460)",borderRadius:10,padding:"16px 20px"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#c9a84c",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Pipeline Value</div>
-              <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumByCur(pipelineProjects)}</div>
-              <div style={{fontSize:11,color:"#888",marginTop:4}}>{pipelineProjects.length} quotation{pipelineProjects.length!==1?"s":""} submitted · awaiting confirmation</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#c9a84c",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Pipeline / Quoted Value</div>
+              <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumField("quotedValue")}</div>
+              <div style={{fontSize:11,color:"#888",marginTop:4}}>{quotedCount} project{quotedCount!==1?"s":""} with quotation submitted</div>
             </div>
             <div style={{background:"linear-gradient(135deg,#2d6a4f,#1b4332)",borderRadius:10,padding:"16px 20px"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#95d5b2",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Total Awarded</div>
-              <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumByCur(awardedProjects)}</div>
-              <div style={{fontSize:11,color:"#888",marginTop:4}}>{awardedProjects.length} order{awardedProjects.length!==1?"s":""} confirmed · in progress or closed</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#95d5b2",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Awarded / Order Value</div>
+              <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumField("orderValue")}</div>
+              <div style={{fontSize:11,color:"#888",marginTop:4}}>{orderedCount} order{orderedCount!==1?"s":""} confirmed</div>
             </div>
           </div>
         );
@@ -452,8 +448,7 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
         <StatCard label="Orders in Transit" value={inTransit} color="#0f3460" sub="Awaiting delivery"/>
         <StatCard label="Payments Pending" value={pendingPayments} color="#2d6a4f" sub="SWIFT to initiate"/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-        <div style={{background:"#fff",borderRadius:10,padding:16}}>
+      <div style={{background:"#fff",borderRadius:10,padding:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
             <h3 style={{margin:0,fontSize:14,fontWeight:700}}>Today's Tasks</h3>
             <button onClick={()=>setTab("tasks")} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:12,fontWeight:600}}>View all →</button>
@@ -474,27 +469,7 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
             );
           })}
         </div>
-        <div style={{background:"#fff",borderRadius:10,padding:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <h3 style={{margin:0,fontSize:14,fontWeight:700}}>Pipeline Snapshot</h3>
-            <button onClick={()=>setTab("projects")} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:12,fontWeight:600}}>View all →</button>
-          </div>
-          {pipeline.map(p=>{
-            const members=p.assignedTo.map(id=>getMember(id,TEAM));
-            const overdue=(p.stage==="Quotation Sent"&&daysDiff(p.lastUpdated)>=15)||(p.stage==="In Transit"&&daysDiff(p.lastUpdated)>=30);
-            return(
-              <div key={p.id} onClick={()=>setDrawerProject(p.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0f0f0",cursor:"pointer"}}>
-                {overdue?<span style={{fontSize:10}}>🔴</span>:p.followUpDate&&isOverdue(p.followUpDate)?<span style={{fontSize:10}}>🟡</span>:<span style={{width:14}}/>}
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.client}</div>
-                  <StageIndex stage={p.stage}/>
-                </div>
-                <div style={{display:"flex"}}>{members.slice(0,2).map(m=>m&&<Avatar key={m.id} member={m} size={22}/>)}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+
     </div>
   );
 }
@@ -520,7 +495,7 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
-            {["Client","Stage","Value","Drive","Assigned To","Last Updated","Follow-up",""].map(h=>(
+            {["Client","Stage","Quoted Value","Order Value","Drive","Assigned To","Closure Date","Follow-up",""].map(h=>(
               <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px"}}>{h}</th>
             ))}
           </tr></thead>
@@ -533,7 +508,24 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
                   onMouseLeave={e=>e.currentTarget.style.background=""}>
                   <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",fontWeight:700,cursor:"pointer"}}>{p.client}<div style={{fontSize:10,color:"#888",fontWeight:400}}>{p.id}</div></td>
                   <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",cursor:"pointer"}}><StageIndex stage={p.stage}/></td>
-                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",fontWeight:600,cursor:"pointer"}}>{p.value}</td>
+                  <td style={{padding:"8px 14px"}} onClick={e=>e.stopPropagation()}>
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <input type="checkbox" checked={!!p.isQuoted} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,isQuoted:e.target.checked}))} style={{cursor:"pointer"}} title="Mark as Quoted"/>
+                      {p.isQuoted?(
+                        <input value={p.quotedValue||""} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,quotedValue:e.target.value}))}
+                          placeholder="Value" style={{width:80,border:"1px solid #ddd",borderRadius:4,padding:"2px 5px",fontSize:11,fontFamily:"inherit"}}/>
+                      ):<span style={{fontSize:11,color:"#ccc"}}>—</span>}
+                    </div>
+                  </td>
+                  <td style={{padding:"8px 14px"}} onClick={e=>e.stopPropagation()}>
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <input type="checkbox" checked={!!p.isOrdered} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,isOrdered:e.target.checked}))} style={{cursor:"pointer"}} title="Mark as Order Confirmed"/>
+                      {p.isOrdered?(
+                        <input value={p.orderValue||""} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,orderValue:e.target.value}))}
+                          placeholder="Value" style={{width:80,border:"1px solid #ddd",borderRadius:4,padding:"2px 5px",fontSize:11,fontFamily:"inherit"}}/>
+                      ):<span style={{fontSize:11,color:"#ccc"}}>—</span>}
+                    </div>
+                  </td>
                   <td style={{padding:"12px 14px"}}>
                     {p.driveLink?<a href={p.driveLink} target="_blank" rel="noreferrer" style={{color:"#0f3460",fontSize:12,textDecoration:"none",fontWeight:600}} onClick={e=>e.stopPropagation()}>📁 Open</a>:<span style={{color:"#ccc",fontSize:11}}>—</span>}
                   </td>
@@ -541,6 +533,10 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
                     <div style={{display:"flex",gap:4}}>{p.assignedTo.map(id=>{const m=getMember(id,TEAM);return m?<Avatar key={id} member={m} size={24}/>:null;})}</div>
                   </td>
                   <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",color:"#666",cursor:"pointer"}}>{p.lastUpdated}</td>
+                  <td style={{padding:"8px 14px"}} onClick={e=>e.stopPropagation()}>
+                    <input type="date" value={p.closureDate||""} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,closureDate:e.target.value}))}
+                      style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 5px",fontSize:11,fontFamily:"inherit",color:p.closureDate&&isOverdue(p.closureDate)?"#c0392b":"#333"}}/>
+                  </td>
                   <td style={{padding:"12px 14px"}}>{p.followUpDate?<span style={{color:overdue?"#c0392b":"#2d6a4f",fontWeight:600}}>{overdue?"🔴 ":""}{p.followUpDate}</span>:<span style={{color:"#ccc"}}>—</span>}</td>
                   <td style={{padding:"8px 8px"}}>
                     <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete project "${p.client}"? This cannot be undone.`))setProjects(ps=>ps.filter(x=>x.id!==p.id));}}
@@ -565,6 +561,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
   const [dateFilter,setDateFilter]=useState("");
   const [filterMonth,setFilterMonth]=useState(new Date().getMonth());
   const [search,setSearch]=useState("");
+  const [nameFilter,setNameFilter]=useState("");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
   const updateLead=(id,patch)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,...patch}:l));
   const addComment=(id,text)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,comments:[...(l.comments||[]),{by:currentUser.name,date:today(),text}]}:l));
@@ -581,6 +578,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
     const s = getLeadStatus(l);
     const statusOk = statusFilter==="active"?s==="active":statusFilter==="converted"?s==="converted":statusFilter==="dead"?s==="dead":true;
     if (!statusOk) return false;
+    if (nameFilter && l.name !== nameFilter) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (l.name||"").toLowerCase().includes(q)||(l.firm||"").toLowerCase().includes(q)||(l.city||"").toLowerCase().includes(q)||(l.contact||"").toLowerCase().includes(q)||(l.source||"").toLowerCase().includes(q)||(l.notes||"").toLowerCase().includes(q);
@@ -673,8 +671,13 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
             </button>
           ))}
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <SearchBar value={search} onChange={setSearch} placeholder="Search name, firm, city…"/>
+          <select value={nameFilter} onChange={e=>setNameFilter(e.target.value)}
+            style={{border:"1px solid #ddd",borderRadius:6,padding:"6px 10px",fontSize:12,fontFamily:"inherit",background:nameFilter?"#1a1a2e":"#fff",color:nameFilter?"#fff":"#555"}}>
+            <option value="">All Names</option>
+            {[...new Set(leads.map(l=>l.name).filter(Boolean))].sort().map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
           <button onClick={()=>setModal({type:"newLead"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Lead</button>
         </div>
       </div>
@@ -770,6 +773,7 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
   const [expanded,setExpanded]=useState(null);
   const [editing,setEditing]=useState({});
   const [search,setSearch]=useState("");
+  const [nameFilter,setNameFilter]=useState("");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit"};
   const updateQ=(id,patch)=>setQuotations(qs=>qs.map(q=>q.id===id?{...q,...patch}:q));
 
@@ -879,6 +883,7 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
 function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
   const [expanded,setExpanded]=useState(null);const [editing,setEditing]=useState({});
   const [search,setSearch]=useState("");
+  const [nameFilter,setNameFilter]=useState("");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
   const updateO=(id,patch)=>setOrders(os=>os.map(o=>o.id===id?{...o,...patch}:o));
 
@@ -981,6 +986,7 @@ function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
 function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
   const [expanded,setExpanded]=useState(null);const [showAddSub,setShowAddSub]=useState(null);const [subForm,setSubForm]=useState({});
   const [search,setSearch]=useState("");
+  const [nameFilter,setNameFilter]=useState("");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"5px 8px",fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
   const updateSubPayment=(payId,spId,patch)=>setPayments(ps=>ps.map(p=>p.id!==payId?p:{...p,subPayments:p.subPayments.map(sp=>sp.id!==spId?sp:{...sp,...patch})}));
   const addSubPayment=(payId)=>{
@@ -1005,14 +1011,18 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
         const totalPending=pay.subPayments.filter(s=>s.status==="Pending").reduce((a,s)=>a+s.amount,0);
         return(
           <div key={pay.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
-            <div onClick={()=>setExpanded(isOpen?null:pay.id)} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",cursor:"pointer"}}>
-              <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{pay.client} <span style={{color:"#888",fontWeight:400,fontSize:12}}>· {pay.supplier}</span></div>
-                <div style={{fontSize:11,color:"#888"}}>{pay.id} · Order: {pay.orderId}</div></div>
-              <div style={{textAlign:"right"}}>
-                <div style={{fontSize:12,color:"#2d6a4f",fontWeight:700}}>✓ {currencySymbol[pay.currency]}{totalMade.toLocaleString()} paid</div>
-                {totalPending>0&&<div style={{fontSize:11,color:"#c0392b"}}>⏳ {currencySymbol[pay.currency]}{totalPending.toLocaleString()} pending</div>}
+            <div style={{display:"flex",alignItems:"center"}}>
+              <div onClick={()=>setExpanded(isOpen?null:pay.id)} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",cursor:"pointer",flex:1}}>
+                <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{pay.client} <span style={{color:"#888",fontWeight:400,fontSize:12}}>· {pay.supplier}</span></div>
+                  <div style={{fontSize:11,color:"#888"}}>{pay.id} · Order: {pay.orderId}</div></div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:12,color:"#2d6a4f",fontWeight:700}}>✓ {currencySymbol[pay.currency]}{totalMade.toLocaleString()} paid</div>
+                  {totalPending>0&&<div style={{fontSize:11,color:"#c0392b"}}>⏳ {currencySymbol[pay.currency]}{totalPending.toLocaleString()} pending</div>}
+                </div>
+                <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
               </div>
-              <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
+              <button onClick={()=>{if(window.confirm("Delete payment record for "+pay.client+"?"))setPayments(ps=>ps.filter(x=>x.id!==pay.id));}}
+                style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"4px 8px",fontSize:12,cursor:"pointer",color:"#c0392b",margin:"0 12px",flexShrink:0}} title="Delete payment record">🗑</button>
             </div>
             {isOpen&&(
               <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px"}}>
