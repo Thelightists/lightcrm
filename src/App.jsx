@@ -49,8 +49,8 @@ const TEAM = [
 ];
 
 const STAGES = [
-  "Lead","Meeting Done","Design Started","Quotation Requested from Supplier",
-  "Quotation Sent","Order Confirmed","Fixtures Ordered","In Transit",
+  "Lead","Meeting Done","Design Started","Mockup Awaited","Mockup Done","Response Awaited",
+  "Quotation Requested from Supplier","Quotation Sent","Order Confirmed","Fixtures Ordered","In Transit",
   "Delivered","Installation","Project on Hold","Closed"
 ];
 
