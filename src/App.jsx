@@ -322,7 +322,7 @@ export default function LightCRM() {
           onAddComment={(pid,text,byName)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,comments:[...p.comments,{by:byName||currentUser.name,date:today(),text}]}))}
           onUpdateDriveLinks={(pid,links)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,driveLinks:links,driveLink:links[0]||""}))}
           onAddTask={(task)=>setTasks(ts=>[...ts,task])}
-          onEditDetails={(pid,form)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,client:form.client,source:form.source,currency:form.currency,value:form.value,assignedTo:p.assignedTo.map((id,i)=>i===0?form.assignedTo0:id),followUpDate:form.followUpDate,lastUpdated:today()}))}
+          onEditDetails={(pid,form)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,client:form.client,source:form.source,currency:form.currency,value:form.value,assignedTo:p.assignedTo.map((id,i)=>i===0?form.assignedTo0:id),followUpDate:form.followUpDate,closureDate:form.closureDate,isQuoted:form.isQuoted,quotedValue:form.quotedValue,isOrdered:form.isOrdered,orderValue:form.orderValue,lastUpdated:today()}))}
         />
       )}
 
@@ -495,7 +495,7 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
-            {["Client","Stage","Quoted Value","Order Value","Drive","Assigned To","Closure Date","Follow-up",""].map(h=>(
+            {["Client","Stage","Quoted Value","Order Value","Drive","Assigned To","Last Updated","Closure Date","Follow-Up",""].map(h=>(
               <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px"}}>{h}</th>
             ))}
           </tr></thead>
@@ -508,23 +508,15 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
                   onMouseLeave={e=>e.currentTarget.style.background=""}>
                   <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",fontWeight:700,cursor:"pointer"}}>{p.client}<div style={{fontSize:10,color:"#888",fontWeight:400}}>{p.id}</div></td>
                   <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",cursor:"pointer"}}><StageIndex stage={p.stage}/></td>
-                  <td style={{padding:"8px 14px"}} onClick={e=>e.stopPropagation()}>
-                    <div style={{display:"flex",alignItems:"center",gap:5}}>
-                      <input type="checkbox" checked={!!p.isQuoted} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,isQuoted:e.target.checked}))} style={{cursor:"pointer"}} title="Mark as Quoted"/>
-                      {p.isQuoted?(
-                        <input value={p.quotedValue||""} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,quotedValue:e.target.value}))}
-                          placeholder="Value" style={{width:80,border:"1px solid #ddd",borderRadius:4,padding:"2px 5px",fontSize:11,fontFamily:"inherit"}}/>
-                      ):<span style={{fontSize:11,color:"#ccc"}}>—</span>}
-                    </div>
+                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",cursor:"pointer"}}>
+                    {p.isQuoted&&p.quotedValue
+                      ? <span style={{fontWeight:600,color:"#0f3460"}}>{currencySymbol[p.currency]||"₹"}{Number(p.quotedValue).toLocaleString()}</span>
+                      : <span style={{color:"#ccc",fontSize:11}}>—</span>}
                   </td>
-                  <td style={{padding:"8px 14px"}} onClick={e=>e.stopPropagation()}>
-                    <div style={{display:"flex",alignItems:"center",gap:5}}>
-                      <input type="checkbox" checked={!!p.isOrdered} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,isOrdered:e.target.checked}))} style={{cursor:"pointer"}} title="Mark as Order Confirmed"/>
-                      {p.isOrdered?(
-                        <input value={p.orderValue||""} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,orderValue:e.target.value}))}
-                          placeholder="Value" style={{width:80,border:"1px solid #ddd",borderRadius:4,padding:"2px 5px",fontSize:11,fontFamily:"inherit"}}/>
-                      ):<span style={{fontSize:11,color:"#ccc"}}>—</span>}
-                    </div>
+                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",cursor:"pointer"}}>
+                    {p.isOrdered&&p.orderValue
+                      ? <span style={{fontWeight:600,color:"#2d6a4f"}}>{currencySymbol[p.currency]||"₹"}{Number(p.orderValue).toLocaleString()}</span>
+                      : <span style={{color:"#ccc",fontSize:11}}>—</span>}
                   </td>
                   <td style={{padding:"12px 14px"}}>
                     {p.driveLink?<a href={p.driveLink} target="_blank" rel="noreferrer" style={{color:"#0f3460",fontSize:12,textDecoration:"none",fontWeight:600}} onClick={e=>e.stopPropagation()}>📁 Open</a>:<span style={{color:"#ccc",fontSize:11}}>—</span>}
@@ -533,9 +525,10 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
                     <div style={{display:"flex",gap:4}}>{p.assignedTo.map(id=>{const m=getMember(id,TEAM);return m?<Avatar key={id} member={m} size={24}/>:null;})}</div>
                   </td>
                   <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",color:"#666",cursor:"pointer"}}>{p.lastUpdated}</td>
-                  <td style={{padding:"8px 14px"}} onClick={e=>e.stopPropagation()}>
-                    <input type="date" value={p.closureDate||""} onChange={e=>setProjects(ps=>ps.map(x=>x.id!==p.id?x:{...x,closureDate:e.target.value}))}
-                      style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 5px",fontSize:11,fontFamily:"inherit",color:p.closureDate&&isOverdue(p.closureDate)?"#c0392b":"#333"}}/>
+                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",cursor:"pointer"}}>
+                    {p.closureDate
+                      ? <span style={{color:isOverdue(p.closureDate)?"#c0392b":"#555",fontWeight:isOverdue(p.closureDate)?700:400}}>{p.closureDate}</span>
+                      : <span style={{color:"#ccc",fontSize:11}}>—</span>}
                   </td>
                   <td style={{padding:"12px 14px"}}>{p.followUpDate?<span style={{color:overdue?"#c0392b":"#2d6a4f",fontWeight:600}}>{overdue?"🔴 ":""}{p.followUpDate}</span>:<span style={{color:"#ccc"}}>—</span>}</td>
                   <td style={{padding:"8px 8px"}}>
@@ -562,6 +555,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
   const [filterMonth,setFilterMonth]=useState(new Date().getMonth());
   const [search,setSearch]=useState("");
   const [nameFilter,setNameFilter]=useState("");
+  const [dashMemberFilter,setDashMemberFilter]=useState("all");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
   const updateLead=(id,patch)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,...patch}:l));
   const addComment=(id,text)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,comments:[...(l.comments||[]),{by:currentUser.name,date:today(),text}]}:l));
@@ -605,6 +599,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
 
   // Mini dashboard stats — based on date filter
   const statsLeads = leads.filter(l => {
+    if (dashMemberFilter !== "all" && String(l.assignedTo) !== dashMemberFilter) return false;
     if (!dateFilter) return true;
     const d = new Date(l.followUpDate||"");
     if (dateFilter === "today") return (l.followUpDate||"") === today();
@@ -622,6 +617,14 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
   return(
     <div>
       {/* Mini Dashboard */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#555"}}>Showing stats for:</div>
+        <select value={dashMemberFilter} onChange={e=>setDashMemberFilter(e.target.value)}
+          style={{border:"1px solid #ddd",borderRadius:6,padding:"5px 10px",fontSize:12,fontFamily:"inherit",background:dashMemberFilter!=="all"?"#1a1a2e":"#fff",color:dashMemberFilter!=="all"?"#fff":"#555"}}>
+          <option value="all">All Team Members</option>
+          {TEAM.map(m=><option key={m.id} value={String(m.id)}>{m.name}</option>)}
+        </select>
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
         {[
           {label:"Active Leads",value:newLeadsCount,color:"#2d6a4f"},
@@ -774,6 +777,7 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
   const [editing,setEditing]=useState({});
   const [search,setSearch]=useState("");
   const [nameFilter,setNameFilter]=useState("");
+  const [dashMemberFilter,setDashMemberFilter]=useState("all");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit"};
   const updateQ=(id,patch)=>setQuotations(qs=>qs.map(q=>q.id===id?{...q,...patch}:q));
 
@@ -884,6 +888,7 @@ function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
   const [expanded,setExpanded]=useState(null);const [editing,setEditing]=useState({});
   const [search,setSearch]=useState("");
   const [nameFilter,setNameFilter]=useState("");
+  const [dashMemberFilter,setDashMemberFilter]=useState("all");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
   const updateO=(id,patch)=>setOrders(os=>os.map(o=>o.id===id?{...o,...patch}:o));
 
@@ -987,6 +992,7 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
   const [expanded,setExpanded]=useState(null);const [showAddSub,setShowAddSub]=useState(null);const [subForm,setSubForm]=useState({});
   const [search,setSearch]=useState("");
   const [nameFilter,setNameFilter]=useState("");
+  const [dashMemberFilter,setDashMemberFilter]=useState("all");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"5px 8px",fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
   const updateSubPayment=(payId,spId,patch)=>setPayments(ps=>ps.map(p=>p.id!==payId?p:{...p,subPayments:p.subPayments.map(sp=>sp.id!==spId?sp:{...sp,...patch})}));
   const addSubPayment=(payId)=>{
@@ -1445,30 +1451,68 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
                 <span style={{fontSize:11,color:"#888",fontWeight:400,marginLeft:8}}>{project.source&&`via ${project.source}`}</span>
               </h2>
             ):(
-              <div style={{marginTop:4,display:"flex",flexDirection:"column",gap:6}}>
-                <input value={detailForm.client} onChange={e=>setDetailForm(f=>({...f,client:e.target.value}))} style={{...inputS,fontSize:16,fontWeight:700}} placeholder="Client name"/>
-                <input value={detailForm.source} onChange={e=>setDetailForm(f=>({...f,source:e.target.value}))} style={inputS} placeholder="Architect / Referral name"/>
-                <div style={{display:"flex",gap:6}}>
-                  <select value={detailForm.currency} onChange={e=>setDetailForm(f=>({...f,currency:e.target.value}))} style={{...inputS,flex:1}}>
-                    {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
-                  </select>
-                  <input value={detailForm.value} onChange={e=>setDetailForm(f=>({...f,value:e.target.value}))} style={{...inputS,flex:2}} placeholder="Estimated value"/>
+              <div style={{marginTop:4,display:"flex",flexDirection:"column",gap:8}}>
+                <div>
+                  <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Client Name</div>
+                  <input value={detailForm.client} onChange={e=>setDetailForm(f=>({...f,client:e.target.value}))} style={{...inputS,fontWeight:700}} placeholder="Client name"/>
+                </div>
+                <div>
+                  <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Architect / Referral</div>
+                  <input value={detailForm.source} onChange={e=>setDetailForm(f=>({...f,source:e.target.value}))} style={inputS} placeholder="Architect / Referral name"/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Currency</div>
+                    <select value={detailForm.currency} onChange={e=>setDetailForm(f=>({...f,currency:e.target.value}))} style={inputS}>
+                      {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Assigned To</div>
+                    <select value={detailForm.assignedTo0} onChange={e=>setDetailForm(f=>({...f,assignedTo0:parseInt(e.target.value)}))} style={inputS}>
+                      {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{background:"#f0faf4",borderRadius:7,padding:10,display:"flex",flexDirection:"column",gap:6}}>
+                  <div style={{fontSize:10,fontWeight:700,color:"#2d6a4f",textTransform:"uppercase",letterSpacing:"0.5px"}}>Quoted Value (Pipeline)</div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <label style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#333",cursor:"pointer"}}>
+                      <input type="checkbox" checked={!!detailForm.isQuoted} onChange={e=>setDetailForm(f=>({...f,isQuoted:e.target.checked}))} style={{cursor:"pointer"}}/>
+                      Quoted
+                    </label>
+                    {detailForm.isQuoted&&<input type="number" value={detailForm.quotedValue||""} onChange={e=>setDetailForm(f=>({...f,quotedValue:e.target.value}))} placeholder="Enter quoted value" style={{...inputS,flex:1}}/>}
+                  </div>
+                </div>
+                <div style={{background:"#f0f4ff",borderRadius:7,padding:10,display:"flex",flexDirection:"column",gap:6}}>
+                  <div style={{fontSize:10,fontWeight:700,color:"#0f3460",textTransform:"uppercase",letterSpacing:"0.5px"}}>Order Value (Awarded)</div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <label style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#333",cursor:"pointer"}}>
+                      <input type="checkbox" checked={!!detailForm.isOrdered} onChange={e=>setDetailForm(f=>({...f,isOrdered:e.target.checked}))} style={{cursor:"pointer"}}/>
+                      Order Confirmed
+                    </label>
+                    {detailForm.isOrdered&&<input type="number" value={detailForm.orderValue||""} onChange={e=>setDetailForm(f=>({...f,orderValue:e.target.value}))} placeholder="Enter order value" style={{...inputS,flex:1}}/>}
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Follow-Up Date</div>
+                    <input type="date" value={detailForm.followUpDate||""} onChange={e=>setDetailForm(f=>({...f,followUpDate:e.target.value}))} style={inputS}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Expected Closure Date</div>
+                    <input type="date" value={detailForm.closureDate||""} onChange={e=>setDetailForm(f=>({...f,closureDate:e.target.value}))} style={inputS}/>
+                  </div>
                 </div>
                 <div style={{display:"flex",gap:6}}>
-                  <select value={detailForm.assignedTo0} onChange={e=>setDetailForm(f=>({...f,assignedTo0:parseInt(e.target.value)}))} style={{...inputS,flex:1}}>
-                    {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                  <input type="date" value={detailForm.followUpDate} onChange={e=>setDetailForm(f=>({...f,followUpDate:e.target.value}))} style={{...inputS,flex:1}}/>
-                </div>
-                <div style={{display:"flex",gap:6}}>
-                  <button onClick={()=>{onEditDetails(project.id,detailForm);setEditingDetails(false);}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600,flex:1}}>Save Changes</button>
-                  <button onClick={()=>setEditingDetails(false)} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                  <button onClick={()=>{onEditDetails(project.id,detailForm);setEditingDetails(false);}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"8px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600,flex:1}}>Save Changes</button>
+                  <button onClick={()=>setEditingDetails(false)} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"8px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
                 </div>
               </div>
             )}
           </div>
           <div style={{display:"flex",gap:8,flexShrink:0}}>
-            {!editingDetails&&<button onClick={()=>{setDetailForm({client:project.client,source:project.source||"",currency:project.currency||"INR",value:project.value||"",assignedTo0:project.assignedTo?.[0]||currentUser.id,followUpDate:project.followUpDate||""});setEditingDetails(true);}} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"4px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",color:"#555"}}>✏️ Edit</button>}
+            {!editingDetails&&<button onClick={()=>{setDetailForm({client:project.client,source:project.source||"",currency:project.currency||"INR",value:project.value||"",assignedTo0:project.assignedTo?.[0]||currentUser.id,followUpDate:project.followUpDate||"",closureDate:project.closureDate||"",isQuoted:!!project.isQuoted,quotedValue:project.quotedValue||"",isOrdered:!!project.isOrdered,orderValue:project.orderValue||""});setEditingDetails(true);}} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"4px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",color:"#555"}}>✏️ Edit</button>}
             <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
           </div>
         </div>
@@ -1671,7 +1715,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
               {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
             </select>
           </div>
-          <div style={{flex:2}}><label style={lS}>Estimated value</label><input style={iS} value={form.value||""} onChange={e=>set("value",e.target.value)} placeholder="Optional"/></div>
+          <div style={{flex:2}}><label style={lS}>Quoted Value (optional)</label><input style={iS} value={form.value||""} onChange={e=>set("value",e.target.value)} placeholder="Enter if quoted"/></div>
         </div>
         <div><label style={lS}>Google Drive folder link (optional)</label><input style={iS} value={form.driveLink||""} onChange={e=>set("driveLink",e.target.value)} placeholder="https://drive.google.com/…"/></div>
         <div><label style={lS}>Assigned to</label>
