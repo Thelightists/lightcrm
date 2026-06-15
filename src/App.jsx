@@ -303,6 +303,7 @@ export default function LightCRM() {
           onAddComment={(pid,text,byName)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,comments:[...p.comments,{by:byName||currentUser.name,date:today(),text}]}))}
           onUpdateDriveLinks={(pid,links)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,driveLinks:links,driveLink:links[0]||""}))}
           onAddTask={(task)=>setTasks(ts=>[...ts,task])}
+          onEditDetails={(pid,form)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,client:form.client,source:form.source,currency:form.currency,value:form.value,assignedTo:p.assignedTo.map((id,i)=>i===0?form.assignedTo0:id),followUpDate:form.followUpDate,lastUpdated:today()}))}
         />
       )}
 
@@ -394,6 +395,37 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
   );
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      {/* Pipeline + Awarded banner */}
+      {(() => {
+        const parseVal = (v,cur) => {
+          if(!v||v==="—") return null;
+          const n = parseFloat(String(v).replace(/[^0-9.]/g,""));
+          if(isNaN(n)) return null;
+          const sym = cur==="EUR"?"€":cur==="USD"?"$":cur==="GBP"?"£":"₹";
+          return {n, sym, cur};
+        };
+        const pipelineProjects = projects.filter(p=>["Quotation Sent","Quotation Requested from Supplier"].includes(p.stage));
+        const awardedProjects = projects.filter(p=>["Order Confirmed","Fixtures Ordered","In Transit","Delivered","Installation","Closed"].includes(p.stage));
+        const sumByCur = (ps) => {
+          const map = {};
+          ps.forEach(p => { const r=parseVal(p.value,p.currency); if(r){map[r.cur]=(map[r.cur]||0)+r.n;} });
+          return Object.entries(map).map(([cur,n])=>{ const sym=cur==="EUR"?"€":cur==="USD"?"$":cur==="GBP"?"£":"₹"; return `${sym}${n.toLocaleString()}`; }).join("  +  ")||"—";
+        };
+        return (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div style={{background:"linear-gradient(135deg,#1a1a2e,#0f3460)",borderRadius:10,padding:"16px 20px"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#c9a84c",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Pipeline Value</div>
+              <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumByCur(pipelineProjects)}</div>
+              <div style={{fontSize:11,color:"#888",marginTop:4}}>{pipelineProjects.length} quotation{pipelineProjects.length!==1?"s":""} submitted · awaiting confirmation</div>
+            </div>
+            <div style={{background:"linear-gradient(135deg,#2d6a4f,#1b4332)",borderRadius:10,padding:"16px 20px"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#95d5b2",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Total Awarded</div>
+              <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumByCur(awardedProjects)}</div>
+              <div style={{fontSize:11,color:"#888",marginTop:4}}>{awardedProjects.length} order{awardedProjects.length!==1?"s":""} confirmed · in progress or closed</div>
+            </div>
+          </div>
+        );
+      })()}
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <StatCard label="Active Leads" value={activeLeads} color="#533483"/>
         <StatCard label="Overdue Follow-ups" value={overdueFollowups} color="#c0392b" sub="Need attention"/>
@@ -641,7 +673,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
                   </div>
                   <div style={{fontSize:11,color:"#888"}}>
                     {l.firm&&<span style={{fontWeight:600,color:"#555"}}>{l.firm} · </span>}
-                    {l.type} · {l.source} · {l.contact}
+                    {l.type} · {l.source}{l.city?` · ${l.city}`:""} · {l.contact}
                   </div>
                 </div>
                 <Badge label={l.meetingStatus} color={l.meetingStatus==="Met"?"#2d6a4f":"#533483"}/>
@@ -671,6 +703,9 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
                     </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>FIRM / COMPANY</div>
                       <input value={ed.firm??l.firm??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],firm:e.target.value}}))} style={inputS} placeholder="Firm or company name…"/>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>CITY</div>
+                      <input value={ed.city??l.city??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],city:e.target.value}}))} style={inputS} placeholder="e.g. Delhi, Gurugram…"/>
                     </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>ASSIGNED TO</div>
                       <select value={ed.assignedTo??l.assignedTo} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],assignedTo:parseInt(e.target.value)}}))} style={inputS}>
@@ -1260,7 +1295,7 @@ function TeamTab({currentUser}){
 }
 
 // ─── Project Drawer ───────────────────────────────────────────────────────────
-function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddComment,onUpdateDriveLinks,onAddTask}){
+function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddComment,onUpdateDriveLinks,onAddTask,onEditDetails}){
   const [comment,setComment]=useState("");
   const [commentAssignee,setCommentAssignee]=useState(currentUser.id);
   const [driveLink,setDriveLink]=useState(project?.driveLink||"");
@@ -1269,6 +1304,8 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
   const [taskForm,setTaskForm]=useState({title:"",assignedTo:currentUser.id,dueDate:addDays(today(),1)});
   const [stageComment,setStageComment]=useState("");
   const [pendingStage,setPendingStage]=useState(null);
+  const [editingDetails,setEditingDetails]=useState(false);
+  const [detailForm,setDetailForm]=useState({});
 
   if(!project)return null;
   const projTasks=tasks.filter(t=>t.projectId===project.id);
@@ -1297,9 +1334,37 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
             <div style={{fontSize:10,color:"#888",fontFamily:"monospace"}}>{project.id}</div>
-            <h2 style={{margin:"4px 0 0",fontSize:20,fontWeight:800}}>{project.client}</h2>
+            {!editingDetails?(
+              <h2 style={{margin:"4px 0 0",fontSize:20,fontWeight:800}}>{project.client}
+                <span style={{fontSize:11,color:"#888",fontWeight:400,marginLeft:8}}>{project.source&&`via ${project.source}`}</span>
+              </h2>
+            ):(
+              <div style={{marginTop:4,display:"flex",flexDirection:"column",gap:6}}>
+                <input value={detailForm.client} onChange={e=>setDetailForm(f=>({...f,client:e.target.value}))} style={{...inputS,fontSize:16,fontWeight:700}} placeholder="Client name"/>
+                <input value={detailForm.source} onChange={e=>setDetailForm(f=>({...f,source:e.target.value}))} style={inputS} placeholder="Architect / Referral name"/>
+                <div style={{display:"flex",gap:6}}>
+                  <select value={detailForm.currency} onChange={e=>setDetailForm(f=>({...f,currency:e.target.value}))} style={{...inputS,flex:1}}>
+                    {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
+                  </select>
+                  <input value={detailForm.value} onChange={e=>setDetailForm(f=>({...f,value:e.target.value}))} style={{...inputS,flex:2}} placeholder="Estimated value"/>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <select value={detailForm.assignedTo0} onChange={e=>setDetailForm(f=>({...f,assignedTo0:parseInt(e.target.value)}))} style={{...inputS,flex:1}}>
+                    {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                  <input type="date" value={detailForm.followUpDate} onChange={e=>setDetailForm(f=>({...f,followUpDate:e.target.value}))} style={{...inputS,flex:1}}/>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>{onEditDetails(project.id,detailForm);setEditingDetails(false);}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600,flex:1}}>Save Changes</button>
+                  <button onClick={()=>setEditingDetails(false)} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
-          <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
+          <div style={{display:"flex",gap:8,flexShrink:0}}>
+            {!editingDetails&&<button onClick={()=>{setDetailForm({client:project.client,source:project.source||"",currency:project.currency||"INR",value:project.value||"",assignedTo0:project.assignedTo?.[0]||currentUser.id,followUpDate:project.followUpDate||""});setEditingDetails(true);}} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"4px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",color:"#555"}}>✏️ Edit</button>}
+            <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
+          </div>
         </div>
 
         {/* Stage selector */}
@@ -1473,6 +1538,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
           </select>
         </div>
         <div><label style={lS}>Source</label><input style={iS} value={form.source||""} onChange={e=>set("source",e.target.value)} placeholder="Referral, Exhibition, Instagram…"/></div>
+        <div><label style={lS}>City</label><input style={iS} value={form.city||""} onChange={e=>set("city",e.target.value)} placeholder="e.g. Delhi, Gurugram, Mumbai…"/></div>
         <div><label style={lS}>Contact</label><input style={iS} value={form.contact||""} onChange={e=>set("contact",e.target.value)} placeholder="+91 XXXXX XXXXX"/></div>
         <div><label style={lS}>Follow-up date</label><input type="date" style={iS} value={form.followUpDate||addDays(today(),3)} onChange={e=>set("followUpDate",e.target.value)}/></div>
         <div><label style={lS}>Notes</label><input style={iS} value={form.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
@@ -1481,7 +1547,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
             {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
-        <button onClick={()=>{if(form.name)onSaveLead({name:form.name,firm:form.firm||"",type:form.type||"End Client",source:form.source||"",contact:form.contact||"",followUpDate:form.followUpDate||addDays(today(),3),meetingStatus:"Not yet",notes:form.notes||"",assignedTo:form.assignedTo||currentUser.id});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Lead</button>
+        <button onClick={()=>{if(form.name)onSaveLead({name:form.name,firm:form.firm||"",type:form.type||"End Client",source:form.source||"",city:form.city||"",contact:form.contact||"",followUpDate:form.followUpDate||addDays(today(),3),meetingStatus:"Not yet",notes:form.notes||"",assignedTo:form.assignedTo||currentUser.id});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Lead</button>
       </div>
     );
     if(modal.type==="newProject") return(
