@@ -573,6 +573,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
     const statusOk = statusFilter==="active"?s==="active":statusFilter==="converted"?s==="converted":statusFilter==="dead"?s==="dead":true;
     if (!statusOk) return false;
     if (nameFilter && l.name !== nameFilter) return false;
+    if (dashMemberFilter !== "all" && String(l.assignedTo) !== dashMemberFilter) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (l.name||"").toLowerCase().includes(q)||(l.firm||"").toLowerCase().includes(q)||(l.city||"").toLowerCase().includes(q)||(l.contact||"").toLowerCase().includes(q)||(l.source||"").toLowerCase().includes(q)||(l.notes||"").toLowerCase().includes(q);
