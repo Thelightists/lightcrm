@@ -87,7 +87,7 @@ const StageIndex = ({ stage }) => {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:3}}>
       <span style={{fontSize:11,color,fontWeight:700}}>{stage}</span>
-      <div style={{height:4,background:"#e8e8e8",borderRadius:2,width:100}}>
+      <div style={{height:4,background:"#e8e8e8",borderRadius:2,width:80}}>
         <div style={{width:`${pct}%`,height:"100%",background:color,borderRadius:2,transition:"width .3s"}}/>
       </div>
     </div>
@@ -149,9 +149,13 @@ const SearchBar = ({ value, onChange, placeholder = "Search…" }) => (
 
 // ─── Responsive helpers ───────────────────────────────────────────────────────
 const useIsMobile = () => {
-  const [mobile, setMobile] = useState(window.innerWidth < 768);
+  const [mobile, setMobile] = useState(() => {
+    try { return window.innerWidth <= 768; } catch { return false; }
+  });
   useEffect(() => {
-    const fn = () => setMobile(window.innerWidth < 768);
+    // Force recheck on mount — fixes PWA/Chrome mobile detection
+    setMobile(window.innerWidth <= 768);
+    const fn = () => setMobile(window.innerWidth <= 768);
     window.addEventListener("resize", fn);
     return () => window.removeEventListener("resize", fn);
   }, []);
@@ -164,17 +168,32 @@ const injectMobileCSS = () => {
   const style = document.createElement("style");
   style.id = "crm-mobile-css";
   style.textContent = `
-    * { box-sizing: border-box; }
-    body { margin: 0; -webkit-tap-highlight-color: transparent; }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { height: 100%; overflow-x: hidden; }
+    body {
+      margin: 0;
+      min-height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-text-size-adjust: 100%;
+    }
+    #root {
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
     input, select, textarea, button { font-family: inherit; }
-    @media (max-width: 767px) {
-      .crm-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-      .crm-hide-mobile { display: none !important; }
-      .crm-card { background:#fff; border-radius:10px; padding:14px 16px; margin-bottom:10px; border:1px solid #f0f0f0; }
-      .crm-card-row { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; }
-      .crm-card-label { font-size:10px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; }
-      .crm-card-value { font-size:13px; color:#333; }
-      .crm-touch-btn { min-height:44px; min-width:44px; display:flex; align-items:center; justify-content:center; }
+    img { max-width: 100%; }
+    table { table-layout: fixed; }
+    @media (max-width: 768px) {
+      /* Prevent ANY element from overflowing viewport width */
+      body, #root, [data-reactroot] > div { max-width: 100vw; overflow-x: hidden; }
+      /* All divs that could overflow */
+      div { max-width: 100%; }
+      /* Inputs full width on mobile */
+      input, select, textarea { max-width: 100%; }
+      /* Touch targets */
+      button { min-height: 36px; }
     }
   `;
   document.head.appendChild(style);
@@ -284,7 +303,7 @@ export default function LightCRM() {
   ];
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#f5f5f7",color:"#1a1a2e"}}>
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#f5f5f7",color:"#1a1a2e",overflowX:"hidden",position:"relative"}}>
       {/* Top bar */}
       <div style={{background:"#1a1a2e",padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:52,position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -634,6 +653,7 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
 function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects,isMobile=false}){
+  const _mobile = isMobile || (typeof window !== "undefined" && window.innerWidth <= 768);
   const [filter,setFilter]=useState("all");
   const [search,setSearch]=useState("");
   const filtered=(filter==="all"?projects:projects.filter(p=>p.stage===filter))
@@ -650,8 +670,8 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
         </div>
         <button onClick={()=>setModal({type:"newProject"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Project</button>
       </div>
-      <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+      <div style={{background:"#fff",borderRadius:10,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
           <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
             {["Client","Stage","Quoted Value","Order Value","Drive","Assigned To","Last Updated","Closure Date","Follow-Up",""].map(h=>(
               <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px"}}>{h}</th>
@@ -979,7 +999,7 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
         const members=p.assignedTo.map(id=>getMember(id,TEAM)).filter(Boolean);
         const overdue=p.followUpDate&&isOverdue(p.followUpDate);
         return(
-          <div key={p.id} onClick={()=>setDrawerProject(p.id)} style={{background:"#fff",borderRadius:10,padding:"12px 16px",cursor:"pointer",border:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:14}}
+          <div key={p.id} onClick={()=>setDrawerProject(p.id)} style={{background:"#fff",borderRadius:10,padding:"12px 16px",cursor:"pointer",border:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:10,overflow:"hidden",width:"100%"}}
             onMouseEnter={e=>e.currentTarget.style.background="#fafafa"}
             onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
             <div style={{flex:1}}>
@@ -1085,7 +1105,7 @@ function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
       {projOrders.map(p=>{
         const members=p.assignedTo.map(id=>getMember(id,TEAM)).filter(Boolean);
         return(
-          <div key={p.id} onClick={()=>setDrawerProject(p.id)} style={{background:"#fff",borderRadius:10,padding:"12px 16px",cursor:"pointer",border:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:14}}
+          <div key={p.id} onClick={()=>setDrawerProject(p.id)} style={{background:"#fff",borderRadius:10,padding:"12px 16px",cursor:"pointer",border:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:10,overflow:"hidden",width:"100%"}}
             onMouseEnter={e=>e.currentTarget.style.background="#fafafa"}
             onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
             <div style={{flex:1}}>
@@ -1347,6 +1367,7 @@ function DeliveryTab({projects,tasks,setDrawerProject}){
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDrawerProject,isMobile=false}){
+  const _mobile = isMobile || (typeof window !== "undefined" && window.innerWidth <= 768);
   const [statusFilter,setStatusFilter]=useState("all");
   const [memberFilter,setMemberFilter]=useState("all");
   const [search,setSearch]=useState("");
@@ -1489,7 +1510,7 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
       {(sectionFilter==="all"||sectionFilter==="tasks") && <>
       <SectionHeader label="Tasks" count={filteredTasks.length} color="#555"/>
       {filteredTasks.length===0&&<div style={{background:"#fff",borderRadius:10,padding:24,textAlign:"center",color:"#aaa",fontSize:13}}>No tasks match this filter.</div>}
-      {isMobile ? (
+      {_mobile ? (
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {filteredTasks.map(t=>{
             const m=getMember(t.assignedTo,TEAM);
@@ -1522,8 +1543,8 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
           })}
         </div>
       ) : (
-        <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <div style={{background:"#fff",borderRadius:10,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:800}}>
             <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
               {["","Task","Assigned To","Due Date","Project","Status",""].map(h=>(
                 <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase"}}>{h}</th>
@@ -1575,8 +1596,8 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
 // ─── Team ─────────────────────────────────────────────────────────────────────
 function TeamTab({currentUser}){
   return(
-    <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+    <div style={{background:"#fff",borderRadius:10,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:500}}>
         <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
           {["Member","Designation","Role",...(currentUser.role==="operations"?["Password"]:[]),"CRM Access"].map(h=>(
             <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase"}}>{h}</th>
@@ -1791,7 +1812,7 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
   return(
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex"}}>
       <div style={{flex:1,background:"#00000060"}} onClick={onClose}/>
-      <div style={{width:window.innerWidth<768?"100vw":520,background:"#fff",overflowY:"auto",padding:window.innerWidth<768?16:24,display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{width:window.innerWidth<=768?"100%":520,maxWidth:"100vw",background:"#fff",overflowY:"auto",overflowX:"hidden",padding:window.innerWidth<=768?16:24,display:"flex",flexDirection:"column",gap:16}}>
 
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -2171,9 +2192,9 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
   };
 
   return(
-    <div style={{position:"fixed",inset:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div style={{position:"fixed",inset:0,zIndex:300,display:"flex",alignItems:window.innerWidth<=768?"flex-end":"center",justifyContent:"center",padding:window.innerWidth<=768?"0":"16px"}}>
       <div style={{position:"absolute",inset:0,background:"#00000060"}} onClick={onClose}/>
-      <div style={{position:"relative",background:"#fff",borderRadius:window.innerWidth<768?"12px 12px 0 0":12,padding:window.innerWidth<768?"20px 16px":24,width:window.innerWidth<768?"100vw":440,maxHeight:window.innerWidth<768?"85vh":"90vh",overflowY:"auto",zIndex:1,marginTop:window.innerWidth<768?"auto":0}}>
+      <div style={{position:"relative",background:"#fff",borderRadius:window.innerWidth<=768?"14px 14px 0 0":12,padding:window.innerWidth<=768?"20px 16px":24,width:window.innerWidth<=768?"100%":440,maxWidth:"100vw",maxHeight:window.innerWidth<=768?"90vh":"90vh",overflowY:"auto",overflowX:"hidden",zIndex:1}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <h3 style={{margin:0,fontSize:16,fontWeight:800}}>{titles[modal.type]}</h3>
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:"#888"}}>✕</button>
