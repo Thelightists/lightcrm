@@ -27,10 +27,20 @@ const toRows  = (items) => items.map(item => [item.id, JSON.stringify(item)]);
 const fromRows = (rows) => rows.map(r => { try { return JSON.parse(r[1]); } catch { return null; } }).filter(Boolean);
 
 // ─── Passwords ────────────────────────────────────────────────────────────────
-const PASSWORDS = {
+const DEFAULT_PASSWORDS = {
   1: "Lx#9mK2w", 2: "Qr$7vN4p", 3: "Tz!3bJ8s", 4: "Wc@6hY1n",
   5: "Pk&5dF3e", 6: "Ry#2xM7q", 7: "Hs!8kL4z", 8: "Nb$1wC9j",
   9: "Gf@4tR6u", 10: "Vm&7aE2i", 11: "Jd#5nB0y"
+};
+// Load saved passwords from localStorage (persists across sessions)
+const loadPasswords = () => {
+  try {
+    const saved = localStorage.getItem("crm_passwords");
+    return saved ? {...DEFAULT_PASSWORDS, ...JSON.parse(saved)} : {...DEFAULT_PASSWORDS};
+  } catch { return {...DEFAULT_PASSWORDS}; }
+};
+const savePasswords = (pwds) => {
+  try { localStorage.setItem("crm_passwords", JSON.stringify(pwds)); } catch {}
 };
 
 // ─── Static team (not stored in sheets — passwords kept local) ────────────────
@@ -217,11 +227,91 @@ const injectMobileCSS = () => {
   document.head.appendChild(style);
 };
 
+// ─── Change Password Modal ────────────────────────────────────────────────────
+function ChangePasswordModal({member, passwords, onSave, onClose}){
+  const [current, setCurrent] = useState("");
+  const [newPwd, setNewPwd]   = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError]     = useState("");
+  const [done, setDone]       = useState(false);
+  const pwdStore = passwords || DEFAULT_PASSWORDS;
+
+  const handleSave = () => {
+    if (current !== pwdStore[member.id]) { setError("Current password is incorrect."); return; }
+    if (newPwd.length < 6) { setError("New password must be at least 6 characters."); return; }
+    if (newPwd !== confirm) { setError("New passwords do not match."); return; }
+    onSave(newPwd);
+    setDone(true);
+    setTimeout(onClose, 1500);
+  };
+
+  const inputS = {
+    width:"100%", border:"1px solid #ddd", borderRadius:7, padding:"10px 12px",
+    fontSize:13, fontFamily:"inherit", boxSizing:"border-box", outline:"none"
+  };
+
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{position:"absolute",inset:0,background:"#00000070"}} onClick={onClose}/>
+      <div style={{position:"relative",background:"#fff",borderRadius:14,padding:24,width:360,maxWidth:"92vw",zIndex:1,boxShadow:"0 20px 60px #0000003a"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div>
+            <div style={{fontSize:16,fontWeight:800,color:"#1a1a2e"}}>Change Password</div>
+            <div style={{fontSize:12,color:"#888",marginTop:2}}>{member.name} · {member.designation}</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
+        </div>
+        {done?(
+          <div style={{textAlign:"center",padding:"20px 0",color:"#2d6a4f",fontWeight:700,fontSize:15}}>
+            ✅ Password changed successfully!
+          </div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4,textTransform:"uppercase"}}>Current Password</div>
+              <input type="password" value={current} onChange={e=>{setCurrent(e.target.value);setError("");}}
+                placeholder="Enter your current password" style={inputS} autoFocus/>
+            </div>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4,textTransform:"uppercase"}}>New Password</div>
+              <input type="password" value={newPwd} onChange={e=>{setNewPwd(e.target.value);setError("");}}
+                placeholder="Min 6 characters" style={inputS}/>
+            </div>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4,textTransform:"uppercase"}}>Confirm New Password</div>
+              <input type="password" value={confirm} onChange={e=>{setConfirm(e.target.value);setError("");}}
+                placeholder="Repeat new password" style={inputS}
+                onKeyDown={e=>e.key==="Enter"&&handleSave()}/>
+            </div>
+            {error&&<div style={{fontSize:12,color:"#c0392b",background:"#fff5f5",border:"1px solid #c0392b33",borderRadius:6,padding:"8px 10px"}}>⚠ {error}</div>}
+            {newPwd&&confirm&&newPwd!==confirm&&!error&&(
+              <div style={{fontSize:12,color:"#c0392b"}}>Passwords do not match</div>
+            )}
+            <button onClick={handleSave}
+              style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:8,padding:"12px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
+              Save New Password
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function LightCRM() {
   useEffect(() => injectMobileCSS(), []);
   const isMobile = useIsMobile();
+  const [passwords, setPasswords] = useState(() => loadPasswords());
   const [currentUser, setCurrentUser] = useState(null);
+  const [showChangePwd, setShowChangePwd] = useState(false);
+  const updatePassword = (memberId, newPwd) => {
+    setPasswords(prev => {
+      const updated = {...prev, [memberId]: newPwd};
+      savePasswords(updated);
+      return updated;
+    });
+  };
   const [tab, setTab]         = useState("dashboard");
   const [projects, setProjectsRaw]   = useState([]);
   const [leads, setLeadsRaw]         = useState([]);
@@ -293,7 +383,7 @@ export default function LightCRM() {
 
   const canAdmin = currentUser && (currentUser.role==="director"||currentUser.role==="operations");
 
-  if (!currentUser) return <LoginScreen onLogin={setCurrentUser}/>;
+  if (!currentUser) return <LoginScreen onLogin={setCurrentUser} passwords={passwords}/>;
 
   if (loading) return (
     <div style={{minHeight:"100vh",background:"#1a1a2e",display:"flex",flexDirection:"column",
@@ -322,6 +412,15 @@ export default function LightCRM() {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#f5f5f7",color:"#1a1a2e",overflowX:"hidden",position:"relative"}}>
+      {/* Change Password Modal — accessible to all */}
+      {showChangePwd&&(
+        <ChangePasswordModal
+          member={currentUser}
+          passwords={passwords}
+          onSave={(newPwd)=>{updatePassword(currentUser.id,newPwd);setShowChangePwd(false);}}
+          onClose={()=>setShowChangePwd(false)}
+        />
+      )}
       {/* Top bar */}
       <div style={{background:"#1a1a2e",padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:52,position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -335,8 +434,12 @@ export default function LightCRM() {
           {lastSync && !isMobile && <span style={{color:"#555",fontSize:10}}>Synced {lastSync}</span>}
           <button onClick={loadAll} title="Refresh" style={{background:"none",border:"1px solid #333",color:"#888",borderRadius:5,padding:"4px 8px",fontSize:13,cursor:"pointer",minWidth:32,minHeight:32}}>↺</button>
           {alerts.length>0 && <div style={{background:"#c0392b22",border:"1px solid #c0392b55",borderRadius:6,padding:"2px 8px",color:"#e74c3c",fontSize:12,fontWeight:700}}>⚠ {alerts.length}</div>}
-          <Avatar member={currentUser} size={28}/>
-          {!isMobile&&<span style={{color:"#ccc",fontSize:13}}>{currentUser.name}</span>}
+          {/* Profile button — opens change password */}
+          <button onClick={()=>setShowChangePwd(true)} title="Change my password"
+            style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",cursor:"pointer",padding:"2px 4px"}}>
+            <Avatar member={currentUser} size={28}/>
+            {!isMobile&&<span style={{color:"#ccc",fontSize:13}}>{currentUser.name}</span>}
+          </button>
           <button onClick={()=>setCurrentUser(null)} style={{background:"none",border:"1px solid #444",color:"#aaa",borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>⇄</button>
         </div>
       </div>
@@ -379,7 +482,7 @@ export default function LightCRM() {
         {tab==="payments"   && canSeePayments(currentUser) && <PaymentsTab payments={payments} orders={orders} setPayments={setPayments} currentUser={currentUser} setModal={setModal} isMobile={isMobile}/>}
         {tab==="delivery"   && <DeliveryTab projects={projects} tasks={tasks} setDrawerProject={setDrawerProject}/>}
         {tab==="tasks"      && <TasksTab tasks={tasks} projects={projects} leads={leads} currentUser={currentUser} setTasks={setTasks} setModal={setModal} setDrawerProject={setDrawerProject} isMobile={isMobile}/>}
-        {tab==="team"       && canAdmin && <TeamTab currentUser={currentUser}/>}
+        {tab==="team"       && canAdmin && <TeamTab currentUser={currentUser} passwords={passwords} onUpdatePassword={updatePassword}/>}
       </div>
 
       {/* Project drawer */}
@@ -417,14 +520,16 @@ export default function LightCRM() {
 }
 
 // ─── Login ────────────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, passwords }) {
   const [selected, setSelected] = useState(null);
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
 
+  const pwdStore = passwords || DEFAULT_PASSWORDS;
+
   const handleLogin = () => {
     if (!selected) return;
-    if (password === PASSWORDS[selected.id]) { setError(""); onLogin(selected); }
+    if (password === pwdStore[selected.id]) { setError(""); onLogin(selected); }
     else setError("Incorrect password. Try again.");
   };
 
@@ -1612,29 +1717,107 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
 }
 
 // ─── Team ─────────────────────────────────────────────────────────────────────
-function TeamTab({currentUser}){
+function TeamTab({currentUser, passwords, onUpdatePassword}){
+  const [changingId, setChangingId] = useState(null);
+  const [newPwd, setNewPwd] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
+  const [showPwd, setShowPwd] = useState({});
+  const [saved, setSaved] = useState(null);
+  const isMohini = currentUser.role === "operations";
+
+  const handleSave = (memberId) => {
+    if (newPwd.length < 6) { alert("Password must be at least 6 characters."); return; }
+    if (newPwd !== confirmPwd) { alert("Passwords do not match."); return; }
+    onUpdatePassword(memberId, newPwd);
+    setChangingId(null); setNewPwd(""); setConfirmPwd("");
+    setSaved(memberId);
+    setTimeout(() => setSaved(null), 2000);
+  };
+
+  const inputS = {border:"1px solid #ddd",borderRadius:5,padding:"5px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
+
   return(
-    <div style={{background:"#fff",borderRadius:10,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:500}}>
-        <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
-          {["Member","Designation","Role",...(currentUser.role==="operations"?["Password"]:[]),"CRM Access"].map(h=>(
-            <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase"}}>{h}</th>
-          ))}
-        </tr></thead>
-        <tbody>
-          {TEAM.map(m=>(
-            <tr key={m.id} style={{borderBottom:"1px solid #f0f0f0"}}>
-              <td style={{padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",gap:10}}><Avatar member={m} size={32}/><span style={{fontWeight:700}}>{m.name}</span></div></td>
-              <td style={{padding:"12px 14px",color:"#555"}}>{m.designation}</td>
-              <td style={{padding:"12px 14px"}}><Badge label={m.role} color="#533483"/></td>
-              {currentUser.role==="operations"&&<td style={{padding:"12px 14px",fontFamily:"monospace",fontSize:12,color:"#888"}}>{PASSWORDS[m.id]}</td>}
-              <td style={{padding:"12px 14px",fontSize:12,color:"#555"}}>
-                {m.role==="director"?"Full access":m.role==="operations"?"All modules":m.role==="sales"?"Leads, Tasks":m.role==="accounts"?"Orders, Payments, SWIFT":m.role==="design"?"Projects (Design), Tasks":m.role==="coordinator"?"Projects, Orders, Quotations":"Delivery, Installation"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {isMohini && (
+        <div style={{background:"#fff3cd",border:"1px solid #ffc10744",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#856404"}}>
+          🔐 You can see and change all team passwords. Changes take effect immediately.
+        </div>
+      )}
+      {TEAM.map(m=>{
+        const isChanging = changingId === m.id;
+        const isSelf = currentUser.id === m.id;
+        const canChange = isMohini || isSelf; // Mohini can change all, others only own
+        const currentPwd = (passwords||DEFAULT_PASSWORDS)[m.id];
+
+        return(
+          <div key={m.id} style={{background:"#fff",borderRadius:10,padding:"14px 16px",border:isChanging?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
+            {/* Member row */}
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <Avatar member={m} size={36}/>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,fontSize:14}}>{m.name} {isSelf&&<span style={{fontSize:10,color:"#c9a84c",fontWeight:600}}>(you)</span>}</div>
+                <div style={{fontSize:11,color:"#888"}}>{m.designation}</div>
+              </div>
+              <Badge label={m.role} color="#533483"/>
+              {saved===m.id && <span style={{fontSize:11,color:"#2d6a4f",fontWeight:700}}>✅ Saved!</span>}
+              {canChange && !isChanging && (
+                <button onClick={()=>{setChangingId(m.id);setNewPwd("");setConfirmPwd("");}}
+                  style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit",color:"#555",whiteSpace:"nowrap"}}>
+                  🔑 Change
+                </button>
+              )}
+            </div>
+
+            {/* Password display — Mohini only */}
+            {isMohini && !isChanging && (
+              <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:11,color:"#888",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px"}}>Password:</span>
+                <span style={{fontFamily:"monospace",fontSize:13,color:"#555",letterSpacing:"1px",flex:1}}>
+                  {showPwd[m.id] ? currentPwd : "•".repeat(currentPwd.length)}
+                </span>
+                <button onClick={()=>setShowPwd(p=>({...p,[m.id]:!p[m.id]}))}
+                  style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:"2px 4px"}}>
+                  {showPwd[m.id]?"🙈":"👁"}
+                </button>
+              </div>
+            )}
+
+            {/* Change password form */}
+            {isChanging && (
+              <div style={{marginTop:12,padding:"12px 14px",background:"#f8f8f8",borderRadius:8,display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:2}}>
+                  Changing password for <strong>{m.name}</strong>
+                </div>
+                <div>
+                  <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:3}}>NEW PASSWORD *</div>
+                  <input type="password" value={newPwd} onChange={e=>setNewPwd(e.target.value)}
+                    placeholder="Min 6 characters" style={inputS} autoComplete="new-password"/>
+                </div>
+                <div>
+                  <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:3}}>CONFIRM PASSWORD *</div>
+                  <input type="password" value={confirmPwd} onChange={e=>setConfirmPwd(e.target.value)}
+                    placeholder="Repeat new password" style={inputS} autoComplete="new-password"
+                    onKeyDown={e=>e.key==="Enter"&&handleSave(m.id)}/>
+                </div>
+                {newPwd && confirmPwd && newPwd!==confirmPwd && (
+                  <div style={{fontSize:11,color:"#c0392b"}}>⚠ Passwords do not match</div>
+                )}
+                <div style={{display:"flex",gap:8,marginTop:4}}>
+                  <button onClick={()=>handleSave(m.id)}
+                    disabled={newPwd.length<6||newPwd!==confirmPwd}
+                    style={{background:newPwd.length>=6&&newPwd===confirmPwd?"#1a1a2e":"#ccc",color:"#fff",border:"none",borderRadius:6,padding:"8px 16px",fontSize:12,cursor:newPwd.length>=6&&newPwd===confirmPwd?"pointer":"not-allowed",fontFamily:"inherit",fontWeight:700,flex:1}}>
+                    💾 Save New Password
+                  </button>
+                  <button onClick={()=>{setChangingId(null);setNewPwd("");setConfirmPwd("");}}
+                    style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"8px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
