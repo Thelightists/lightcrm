@@ -164,6 +164,24 @@ const useIsMobile = () => {
 
 // Inject global mobile CSS once
 const injectMobileCSS = () => {
+  // Also inject PWA icon meta tags dynamically
+  if (!document.getElementById("crm-icon-meta")) {
+    const iconSizes = ["192", "512", "180"];
+    iconSizes.forEach(size => {
+      const link = document.createElement("link");
+      link.id = `crm-icon-meta-${size}`;
+      link.rel = size === "180" ? "apple-touch-icon" : "icon";
+      link.type = "image/png";
+      link.sizes = `${size}x${size}`;
+      link.href = `/icon-${size === "180" ? "192" : size}.png?v=2`;
+      document.head.appendChild(link);
+    });
+    const meta = document.createElement("meta");
+    meta.id = "crm-icon-meta";
+    meta.name = "msapplication-TileImage";
+    meta.content = "/icon-512.png?v=2";
+    document.head.appendChild(meta);
+  }
   if (document.getElementById("crm-mobile-css")) return;
   const style = document.createElement("style");
   style.id = "crm-mobile-css";
