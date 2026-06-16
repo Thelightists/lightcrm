@@ -146,8 +146,44 @@ const SearchBar = ({ value, onChange, placeholder = "Search…" }) => (
   </div>
 );
 
+
+// ─── Responsive helpers ───────────────────────────────────────────────────────
+const useIsMobile = () => {
+  const [mobile, setMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const fn = () => setMobile(window.innerWidth < 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return mobile;
+};
+
+// Inject global mobile CSS once
+const injectMobileCSS = () => {
+  if (document.getElementById("crm-mobile-css")) return;
+  const style = document.createElement("style");
+  style.id = "crm-mobile-css";
+  style.textContent = `
+    * { box-sizing: border-box; }
+    body { margin: 0; -webkit-tap-highlight-color: transparent; }
+    input, select, textarea, button { font-family: inherit; }
+    @media (max-width: 767px) {
+      .crm-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .crm-hide-mobile { display: none !important; }
+      .crm-card { background:#fff; border-radius:10px; padding:14px 16px; margin-bottom:10px; border:1px solid #f0f0f0; }
+      .crm-card-row { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; }
+      .crm-card-label { font-size:10px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; }
+      .crm-card-value { font-size:13px; color:#333; }
+      .crm-touch-btn { min-height:44px; min-width:44px; display:flex; align-items:center; justify-content:center; }
+    }
+  `;
+  document.head.appendChild(style);
+};
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function LightCRM() {
+  useEffect(() => injectMobileCSS(), []);
+  const isMobile = useIsMobile();
   const [currentUser, setCurrentUser] = useState(null);
   const [tab, setTab]         = useState("dashboard");
   const [projects, setProjectsRaw]   = useState([]);
@@ -250,33 +286,35 @@ export default function LightCRM() {
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#f5f5f7",color:"#1a1a2e"}}>
       {/* Top bar */}
-      <div style={{background:"#1a1a2e",padding:"0 20px",display:"flex",alignItems:"center",justifyContent:"space-between",height:52,position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{display:"flex",alignItems:"baseline",gap:7}}>
-            <span style={{color:"#fff",fontWeight:800,fontSize:17,letterSpacing:"-0.4px"}}>The Lightists</span>
-            <span style={{color:"#c9a84c",fontWeight:500,fontSize:11,letterSpacing:"2px",textTransform:"uppercase"}}>CRM</span>
-          </div>
-          {saving && <Spinner text={saving}/>}
-        </div>
+      <div style={{background:"#1a1a2e",padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:52,position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          {lastSync && <span style={{color:"#555",fontSize:10}}>Synced {lastSync}</span>}
-          <button onClick={loadAll} title="Refresh" style={{background:"none",border:"1px solid #333",color:"#888",borderRadius:5,padding:"2px 8px",fontSize:11,cursor:"pointer"}}>↺</button>
-          {alerts.length>0 && <div style={{background:"#c0392b22",border:"1px solid #c0392b55",borderRadius:6,padding:"2px 8px",color:"#e74c3c",fontSize:12,fontWeight:700}}>⚠ {alerts.length} alerts</div>}
-          <Avatar member={currentUser} size={30}/>
-          <span style={{color:"#ccc",fontSize:13}}>{currentUser.name}</span>
-          <button onClick={()=>setCurrentUser(null)} style={{background:"none",border:"1px solid #444",color:"#aaa",borderRadius:5,padding:"3px 10px",fontSize:11,cursor:"pointer"}}>Switch</button>
+          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+            <span style={{color:"#fff",fontWeight:800,fontSize:isMobile?14:17,letterSpacing:"-0.4px"}}>The Lightists</span>
+            <span style={{color:"#c9a84c",fontWeight:500,fontSize:10,letterSpacing:"2px",textTransform:"uppercase"}}>CRM</span>
+          </div>
+          {saving && !isMobile && <Spinner text={saving}/>}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          {lastSync && !isMobile && <span style={{color:"#555",fontSize:10}}>Synced {lastSync}</span>}
+          <button onClick={loadAll} title="Refresh" style={{background:"none",border:"1px solid #333",color:"#888",borderRadius:5,padding:"4px 8px",fontSize:13,cursor:"pointer",minWidth:32,minHeight:32}}>↺</button>
+          {alerts.length>0 && <div style={{background:"#c0392b22",border:"1px solid #c0392b55",borderRadius:6,padding:"2px 8px",color:"#e74c3c",fontSize:12,fontWeight:700}}>⚠ {alerts.length}</div>}
+          <Avatar member={currentUser} size={28}/>
+          {!isMobile&&<span style={{color:"#ccc",fontSize:13}}>{currentUser.name}</span>}
+          <button onClick={()=>setCurrentUser(null)} style={{background:"none",border:"1px solid #444",color:"#aaa",borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>⇄</button>
         </div>
       </div>
 
       {/* Nav */}
-      <div style={{background:"#fff",borderBottom:"1px solid #e0e0e0",overflowX:"auto",display:"flex",padding:"0 16px"}}>
+      <div style={{background:"#fff",borderBottom:"1px solid #e0e0e0",overflowX:"auto",display:"flex",padding:"0 8px",WebkitOverflowScrolling:"touch"}}>
         {tabs.map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
-            background:"none",border:"none",cursor:"pointer",padding:"12px 14px",
-            fontWeight:tab===t.id?700:400,fontSize:13,
+            background:"none",border:"none",cursor:"pointer",
+            padding:isMobile?"10px 10px":"12px 14px",
+            fontWeight:tab===t.id?700:400,
+            fontSize:isMobile?11:13,
             color:tab===t.id?"#1a1a2e":"#666",
             borderBottom:tab===t.id?"2px solid #c9a84c":"2px solid transparent",
-            whiteSpace:"nowrap",fontFamily:"inherit"
+            whiteSpace:"nowrap",fontFamily:"inherit",minHeight:44
           }}>{t.label}</button>
         ))}
       </div>
@@ -295,15 +333,15 @@ export default function LightCRM() {
       )}
 
       {/* Content */}
-      <div style={{padding:"20px",maxWidth:1200,margin:"0 auto"}}>
-        {tab==="dashboard"  && <Dashboard projects={projects} leads={leads} tasks={tasks} alerts={alerts} activeLeads={activeLeads} overdueFollowups={overdueFollowups} inTransit={inTransit} pendingPayments={pendingPayments} setDrawerProject={setDrawerProject} setTab={setTab} currentUser={currentUser} onCompleteTask={id=>setTasks(ts=>ts.map(t=>t.id===id?{...t,status:"Done"}:t))}/>}
-        {tab==="projects"   && <ProjectsTab projects={projects} setDrawerProject={setDrawerProject} currentUser={currentUser} setModal={setModal} setProjects={setProjects}/>}
-        {tab==="leads"      && <LeadsTab leads={leads} currentUser={currentUser} setModal={setModal} setLeads={setLeads}/>}
-        {tab==="quotations" && <QuotationsTab quotations={quotations} projects={projects} setQuotations={setQuotations} setModal={setModal} setDrawerProject={setDrawerProject}/>}
-        {tab==="orders"     && <OrdersTab orders={orders} projects={projects} setOrders={setOrders} setModal={setModal} setDrawerProject={setDrawerProject}/>}
-        {tab==="payments"   && canSeePayments(currentUser) && <PaymentsTab payments={payments} orders={orders} setPayments={setPayments} currentUser={currentUser} setModal={setModal}/>}
+      <div style={{padding:isMobile?"12px 10px":"20px",maxWidth:1200,margin:"0 auto"}}>
+        {tab==="dashboard"  && <Dashboard projects={projects} leads={leads} tasks={tasks} alerts={alerts} activeLeads={activeLeads} overdueFollowups={overdueFollowups} inTransit={inTransit} pendingPayments={pendingPayments} setDrawerProject={setDrawerProject} setTab={setTab} currentUser={currentUser} isMobile={isMobile} onCompleteTask={id=>setTasks(ts=>ts.map(t=>t.id===id?{...t,status:"Done"}:t))}/>}
+        {tab==="projects"   && <ProjectsTab projects={projects} setDrawerProject={setDrawerProject} currentUser={currentUser} setModal={setModal} setProjects={setProjects} isMobile={isMobile}/>}
+        {tab==="leads"      && <LeadsTab leads={leads} currentUser={currentUser} setModal={setModal} setLeads={setLeads} isMobile={isMobile}/>}
+        {tab==="quotations" && <QuotationsTab quotations={quotations} projects={projects} setQuotations={setQuotations} setModal={setModal} setDrawerProject={setDrawerProject} isMobile={isMobile}/>}
+        {tab==="orders"     && <OrdersTab orders={orders} projects={projects} setOrders={setOrders} setModal={setModal} setDrawerProject={setDrawerProject} isMobile={isMobile}/>}
+        {tab==="payments"   && canSeePayments(currentUser) && <PaymentsTab payments={payments} orders={orders} setPayments={setPayments} currentUser={currentUser} setModal={setModal} isMobile={isMobile}/>}
         {tab==="delivery"   && <DeliveryTab projects={projects} tasks={tasks} setDrawerProject={setDrawerProject}/>}
-        {tab==="tasks"      && <TasksTab tasks={tasks} projects={projects} leads={leads} currentUser={currentUser} setTasks={setTasks} setModal={setModal} setDrawerProject={setDrawerProject}/>}
+        {tab==="tasks"      && <TasksTab tasks={tasks} projects={projects} leads={leads} currentUser={currentUser} setTasks={setTasks} setModal={setModal} setDrawerProject={setDrawerProject} isMobile={isMobile}/>}
         {tab==="team"       && canAdmin && <TeamTab currentUser={currentUser}/>}
       </div>
 
@@ -404,80 +442,198 @@ function LoginScreen({ onLogin }) {
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
-function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inTransit,pendingPayments,setDrawerProject,setTab,currentUser,onCompleteTask}){
-  const todayTasks=tasks.filter(t=>t.status!=="Done");
+function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inTransit,pendingPayments,setDrawerProject,setTab,currentUser,isMobile=false,onCompleteTask}){
   const pipeline=projects.filter(p=>p.stage!=="Closed");
+
   const StatCard=({label,value,sub,color})=>(
-    <div style={{background:"#fff",borderRadius:10,padding:"16px 20px",flex:1,minWidth:130,borderLeft:`4px solid ${color}`}}>
+    <div style={{background:"#fff",borderRadius:10,padding:"16px 20px",borderLeft:`4px solid ${color}`}}>
       <div style={{fontSize:26,fontWeight:800,color}}>{value}</div>
       <div style={{fontSize:13,fontWeight:700,color:"#333",marginTop:2}}>{label}</div>
       {sub&&<div style={{fontSize:11,color:"#888",marginTop:2}}>{sub}</div>}
     </div>
   );
+
+  // ── Personal daily briefing ────────────────────────────────────────────────
+  const myTasks = tasks.filter(t =>
+    t.assignedTo === currentUser.id && t.status !== "Done" &&
+    (isOverdue(t.dueDate) || t.dueDate === today())
+  );
+  const myProjectFollowups = projects.filter(p => {
+    if (!p.followUpDate || p.stage === "Closed") return false;
+    const assigned = p.assignedTo?.includes(currentUser.id);
+    const due = p.followUpDate <= today();
+    return assigned && due;
+  });
+  const myLeadFollowups = leads.filter(l => {
+    if (!l.followUpDate) return false;
+    const assigned = l.assignedTo === currentUser.id;
+    const due = l.followUpDate <= today();
+    const dead = l.leadStatus === "dead";
+    return assigned && due && !dead;
+  });
+
+  const totalBriefing = myTasks.length + myProjectFollowups.length + myLeadFollowups.length;
+  const greetHour = new Date().getHours();
+  const greeting = greetHour < 12 ? "Good morning" : greetHour < 17 ? "Good afternoon" : "Good evening";
+
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:20}}>
-      {/* Pipeline (Quoted) + Awarded (Order) banner — from manual project values */}
-      {(() => {
-        const sym = (cur) => cur==="EUR"?"€":cur==="USD"?"$":cur==="GBP"?"£":"₹";
-        const sumField = (field) => {
-          const map = {};
-          projects.forEach(p => {
-            const v = parseFloat(p[field]);
-            if (!isNaN(v) && v > 0) { const cur = p.currency||"INR"; map[cur]=(map[cur]||0)+v; }
-          });
-          return Object.entries(map).map(([c,n])=>`${sym(c)}${n.toLocaleString()}`).join("  +  ")||"—";
-        };
-        const quotedCount = projects.filter(p=>p.isQuoted&&parseFloat(p.quotedValue)>0).length;
-        const orderedCount = projects.filter(p=>p.isOrdered&&parseFloat(p.orderValue)>0).length;
-        return (
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <div style={{background:"linear-gradient(135deg,#1a1a2e,#0f3460)",borderRadius:10,padding:"16px 20px"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#c9a84c",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Pipeline / Quoted Value</div>
-              <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumField("quotedValue")}</div>
-              <div style={{fontSize:11,color:"#888",marginTop:4}}>{quotedCount} project{quotedCount!==1?"s":""} with quotation submitted</div>
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+      {/* ── Personal Daily Briefing ─────────────────────────────────────── */}
+      <div style={{background:"linear-gradient(135deg,#1a1a2e 0%,#0f3460 100%)",borderRadius:12,padding:isMobile?"16px":"20px 24px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+          <div>
+            <div style={{color:"#c9a84c",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>
+              {greeting}, {currentUser.name} 👋
             </div>
-            <div style={{background:"linear-gradient(135deg,#2d6a4f,#1b4332)",borderRadius:10,padding:"16px 20px"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#95d5b2",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Awarded / Order Value</div>
-              <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumField("orderValue")}</div>
-              <div style={{fontSize:11,color:"#888",marginTop:4}}>{orderedCount} order{orderedCount!==1?"s":""} confirmed</div>
+            <div style={{color:"#fff",fontSize:isMobile?17:20,fontWeight:800,marginBottom:2}}>
+              {totalBriefing === 0
+                ? "You're all caught up today! 🎉"
+                : `You have ${totalBriefing} item${totalBriefing!==1?"s":""} needing attention`}
             </div>
+            <div style={{color:"#888",fontSize:12,marginTop:2}}>{new Date().toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
           </div>
-        );
-      })()}
-      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <StatCard label="Active Leads" value={activeLeads} color="#533483"/>
-        <StatCard label="Overdue Follow-ups" value={overdueFollowups} color="#c0392b" sub="Need attention"/>
-        <StatCard label="Orders in Transit" value={inTransit} color="#0f3460" sub="Awaiting delivery"/>
-        <StatCard label="Payments Pending" value={pendingPayments} color="#2d6a4f" sub="SWIFT to initiate"/>
+          {totalBriefing > 0 && (
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {myTasks.length>0&&<div style={{background:"#c0392b22",border:"1px solid #c0392b55",borderRadius:8,padding:"8px 12px",textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:800,color:"#e74c3c"}}>{myTasks.length}</div>
+                <div style={{fontSize:10,color:"#aaa",marginTop:1}}>Tasks due</div>
+              </div>}
+              {myProjectFollowups.length>0&&<div style={{background:"#c9a84c22",border:"1px solid #c9a84c55",borderRadius:8,padding:"8px 12px",textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:800,color:"#c9a84c"}}>{myProjectFollowups.length}</div>
+                <div style={{fontSize:10,color:"#aaa",marginTop:1}}>Project follow-ups</div>
+              </div>}
+              {myLeadFollowups.length>0&&<div style={{background:"#53348322",border:"1px solid #53348355",borderRadius:8,padding:"8px 12px",textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:800,color:"#9b59b6"}}>{myLeadFollowups.length}</div>
+                <div style={{fontSize:10,color:"#aaa",marginTop:1}}>Lead follow-ups</div>
+              </div>}
+            </div>
+          )}
+        </div>
       </div>
-      <div style={{background:"#fff",borderRadius:10,padding:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <h3 style={{margin:0,fontSize:14,fontWeight:700}}>Today's Tasks</h3>
+
+      {/* ── Tasks due today / overdue ─────────────────────────────────────── */}
+      {myTasks.length > 0 && (
+        <div style={{background:"#fff",borderRadius:10,padding:isMobile?14:16,border:"2px solid #c0392b22"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontWeight:700,fontSize:13,color:"#c0392b"}}>🔴 Tasks Due Today / Overdue</div>
             <button onClick={()=>setTab("tasks")} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:12,fontWeight:600}}>View all →</button>
           </div>
-          {todayTasks.length===0&&<p style={{color:"#888",fontSize:13}}>All tasks done! 🎉</p>}
-          {todayTasks.map(t=>{
-            const m=getMember(t.assignedTo,TEAM);const overdue=isOverdue(t.dueDate);
+          {myTasks.map(t=>{
+            const overdue=isOverdue(t.dueDate);
+            const proj=projects.find(p=>p.id===t.projectId);
             return(
-              <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0f0f0"}}>
-                <button onClick={()=>onCompleteTask(t.id)} style={{width:18,height:18,borderRadius:4,border:"2px solid #ddd",background:"none",cursor:"pointer",flexShrink:0}}/>
-                <Avatar member={m} size={24}/>
+              <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f0f0f0"}}>
+                <button onClick={()=>onCompleteTask(t.id)}
+                  style={{width:22,height:22,borderRadius:5,border:"2px solid #ddd",background:"none",cursor:"pointer",flexShrink:0,fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                </button>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:12,fontWeight:600,color:overdue?"#c0392b":"#1a1a2e",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</div>
-                  <div style={{fontSize:10,color:"#888"}}>{m?.name} · {overdue?<span style={{color:"#c0392b"}}>Overdue</span>:`Due ${t.dueDate}`}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:overdue?"#c0392b":"#1a1a2e",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</div>
+                  <div style={{fontSize:11,color:"#888",marginTop:1}}>
+                    {proj&&<span>{proj.client} · </span>}
+                    <span style={{color:overdue?"#c0392b":"#888",fontWeight:overdue?700:400}}>
+                      {overdue?`Overdue since ${t.dueDate}`:`Due today`}
+                    </span>
+                  </div>
                 </div>
-                {overdue&&<span style={{fontSize:10}}>🔴</span>}
+                {overdue&&<span style={{fontSize:12,background:"#c0392b11",color:"#c0392b",borderRadius:4,padding:"2px 6px",fontWeight:700,fontSize:10}}>OVERDUE</span>}
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* ── Project follow-ups due ────────────────────────────────────────── */}
+      {myProjectFollowups.length > 0 && (
+        <div style={{background:"#fff",borderRadius:10,padding:isMobile?14:16,border:"2px solid #c9a84c33"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontWeight:700,fontSize:13,color:"#c9a84c"}}>🟡 Project Follow-Ups Due</div>
+            <button onClick={()=>setTab("projects")} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:12,fontWeight:600}}>View all →</button>
+          </div>
+          {myProjectFollowups.map(p=>(
+            <div key={p.id} onClick={()=>setDrawerProject(p.id)}
+              style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f0f0f0",cursor:"pointer"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#1a1a2e",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.client}</div>
+                <div style={{fontSize:11,color:"#888",marginTop:1}}>{p.stage} · Follow-up: {p.followUpDate}</div>
+              </div>
+              <StageIndex stage={p.stage}/>
+              <span style={{color:"#c9a84c",fontSize:12}}>→</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Lead follow-ups due ───────────────────────────────────────────── */}
+      {myLeadFollowups.length > 0 && (
+        <div style={{background:"#fff",borderRadius:10,padding:isMobile?14:16,border:"2px solid #53348333"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontWeight:700,fontSize:13,color:"#533483"}}>🟣 Lead Follow-Ups Due</div>
+            <button onClick={()=>setTab("leads")} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:12,fontWeight:600}}>View all →</button>
+          </div>
+          {myLeadFollowups.map(l=>{
+            const m=getMember(l.assignedTo,TEAM);
+            return(
+              <div key={l.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f0f0f0"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#1a1a2e"}}>{l.name}</div>
+                  <div style={{fontSize:11,color:"#888",marginTop:1}}>{l.type}{l.firm?` · ${l.firm}`:""} · {l.meetingStatus}</div>
+                </div>
+                <span style={{fontSize:11,color:"#c0392b",fontWeight:600}}>{l.followUpDate}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Divider ───────────────────────────────────────────────────────── */}
+      <div style={{borderTop:"1px solid #e8e8e8",paddingTop:16}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:12}}>Business Overview</div>
+
+        {/* Pipeline + Awarded */}
+        {(() => {
+          const sym = (cur) => cur==="EUR"?"€":cur==="USD"?"$":cur==="GBP"?"£":"₹";
+          const sumField = (field) => {
+            const map = {};
+            projects.forEach(p => {
+              const v = parseFloat(p[field]);
+              if (!isNaN(v) && v > 0) { const cur = p.currency||"INR"; map[cur]=(map[cur]||0)+v; }
+            });
+            return Object.entries(map).map(([c,n])=>`${sym(c)}${n.toLocaleString()}`).join("  +  ")||"—";
+          };
+          const quotedCount = projects.filter(p=>p.isQuoted&&parseFloat(p.quotedValue)>0).length;
+          const orderedCount = projects.filter(p=>p.isOrdered&&parseFloat(p.orderValue)>0).length;
+          return (
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
+              <div style={{background:"linear-gradient(135deg,#1a1a2e,#0f3460)",borderRadius:10,padding:"16px 20px"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#c9a84c",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Pipeline / Quoted Value</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumField("quotedValue")}</div>
+                <div style={{fontSize:11,color:"#888",marginTop:4}}>{quotedCount} quotation{quotedCount!==1?"s":""} submitted</div>
+              </div>
+              <div style={{background:"linear-gradient(135deg,#2d6a4f,#1b4332)",borderRadius:10,padding:"16px 20px"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#95d5b2",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Awarded / Order Value</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>{sumField("orderValue")}</div>
+                <div style={{fontSize:11,color:"#888",marginTop:4}}>{orderedCount} order{orderedCount!==1?"s":""} confirmed</div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Stat cards */}
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:isMobile?8:12}}>
+          <StatCard label="Active Leads" value={activeLeads} color="#533483"/>
+          <StatCard label="Overdue Follow-ups" value={overdueFollowups} color="#c0392b" sub="Need attention"/>
+          <StatCard label="Orders in Transit" value={inTransit} color="#0f3460" sub="Awaiting delivery"/>
+          <StatCard label="Payments Pending" value={pendingPayments} color="#2d6a4f" sub="SWIFT to initiate"/>
+        </div>
+      </div>
 
     </div>
   );
 }
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
-function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects}){
+function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects,isMobile=false}){
   const [filter,setFilter]=useState("all");
   const [search,setSearch]=useState("");
   const filtered=(filter==="all"?projects:projects.filter(p=>p.stage===filter))
@@ -1190,7 +1346,7 @@ function DeliveryTab({projects,tasks,setDrawerProject}){
 }
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
-function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDrawerProject}){
+function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDrawerProject,isMobile=false}){
   const [statusFilter,setStatusFilter]=useState("all");
   const [memberFilter,setMemberFilter]=useState("all");
   const [search,setSearch]=useState("");
@@ -1332,53 +1488,85 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
       {/* Manual tasks */}
       {(sectionFilter==="all"||sectionFilter==="tasks") && <>
       <SectionHeader label="Tasks" count={filteredTasks.length} color="#555"/>
-      <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
-            {["","Task","Assigned To","Due Date","Project","Status",""].map(h=>(
-              <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase"}}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {filteredTasks.length===0&&(
-              <tr><td colSpan={7} style={{padding:"24px",textAlign:"center",color:"#aaa",fontSize:13}}>No tasks match this filter.</td></tr>
-            )}
-            {filteredTasks.map(t=>{
-              const m=getMember(t.assignedTo,TEAM);
-              const proj=projects.find(p=>p.id===t.projectId);
-              const overdue=t.status!=="Done"&&isOverdue(t.dueDate);
-              const dueTomorrow=t.status!=="Done"&&t.dueDate===tomorrow();
-              return(
-                <tr key={t.id} style={{borderBottom:"1px solid #f0f0f0",opacity:t.status==="Done"?0.5:1,background:overdue?"#fff5f5":dueTomorrow?"#fffdf0":""}}>
-                  <td style={{padding:"10px 14px"}}>
-                    <button onClick={()=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,status:tt.status==="Done"?"Pending":"Done"}:tt))}
-                      style={{width:18,height:18,borderRadius:4,border:`2px solid ${t.status==="Done"?"#2d6a4f":"#ddd"}`,background:t.status==="Done"?"#2d6a4f":"none",cursor:"pointer",color:"#fff",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      {t.status==="Done"?"✓":""}
-                    </button>
-                  </td>
-                  <td style={{padding:"10px 14px",fontWeight:600,textDecoration:t.status==="Done"?"line-through":"none"}}>{t.title}</td>
-                  <td style={{padding:"8px 14px"}}>
-                    <select value={t.assignedTo} onChange={e=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,assignedTo:parseInt(e.target.value)}:tt))}
-                      style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 6px",fontSize:11,fontFamily:"inherit",background:"#fff"}}>
-                      {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
-                    </select>
-                  </td>
-                  <td style={{padding:"8px 14px"}}>
-                    <input type="date" value={t.dueDate||""} onChange={e=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,dueDate:e.target.value}:tt))}
-                      style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 6px",fontSize:11,fontFamily:"inherit",color:overdue?"#c0392b":"#333",fontWeight:overdue?700:400}}/>
-                  </td>
-                  <td style={{padding:"10px 14px",color:"#666",fontSize:12}}>{proj?.client||"—"}</td>
-                  <td style={{padding:"10px 14px"}}><Badge label={t.status} color={t.status==="Done"?"#2d6a4f":"#c0392b"}/></td>
-                  <td style={{padding:"8px 8px"}}>
-                    <button onClick={()=>{if(window.confirm("Delete task: "+t.title+"?"))setTasks(ts=>ts.filter(x=>x.id!==t.id));}}
-                      style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#c0392b"}}>🗑</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {filteredTasks.length===0&&<div style={{background:"#fff",borderRadius:10,padding:24,textAlign:"center",color:"#aaa",fontSize:13}}>No tasks match this filter.</div>}
+      {isMobile ? (
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {filteredTasks.map(t=>{
+            const m=getMember(t.assignedTo,TEAM);
+            const proj=projects.find(p=>p.id===t.projectId);
+            const overdue=t.status!=="Done"&&isOverdue(t.dueDate);
+            return(
+              <div key={t.id} style={{background:overdue?"#fff5f5":"#fff",borderRadius:10,padding:"12px 14px",border:"1px solid #f0f0f0",opacity:t.status==="Done"?0.6:1}}>
+                <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                  <button onClick={()=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,status:tt.status==="Done"?"Pending":"Done"}:tt))}
+                    style={{width:22,height:22,borderRadius:5,border:`2px solid ${t.status==="Done"?"#2d6a4f":"#ddd"}`,background:t.status==="Done"?"#2d6a4f":"none",cursor:"pointer",color:"#fff",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>
+                    {t.status==="Done"?"✓":""}
+                  </button>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:600,fontSize:13,textDecoration:t.status==="Done"?"line-through":"none",color:overdue?"#c0392b":"#1a1a2e"}}>{t.title}</div>
+                    {proj&&<div style={{fontSize:11,color:"#888",marginTop:2}}>📁 {proj.client}</div>}
+                    <div style={{display:"flex",gap:8,marginTop:8,alignItems:"center",flexWrap:"wrap"}}>
+                      <select value={t.assignedTo} onChange={e=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,assignedTo:parseInt(e.target.value)}:tt))}
+                        style={{border:"1px solid #ddd",borderRadius:5,padding:"4px 6px",fontSize:11,fontFamily:"inherit",background:"#fff"}}>
+                        {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <input type="date" value={t.dueDate||""} onChange={e=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,dueDate:e.target.value}:tt))}
+                        style={{border:"1px solid #ddd",borderRadius:5,padding:"4px 6px",fontSize:11,fontFamily:"inherit",color:overdue?"#c0392b":"#333"}}/>
+                      <button onClick={()=>{if(window.confirm("Delete?"))setTasks(ts=>ts.filter(x=>x.id!==t.id));}}
+                        style={{background:"none",border:"none",color:"#c0392b",fontSize:16,cursor:"pointer",marginLeft:"auto",padding:"4px"}}>🗑</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
+              {["","Task","Assigned To","Due Date","Project","Status",""].map(h=>(
+                <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase"}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {filteredTasks.map(t=>{
+                const m=getMember(t.assignedTo,TEAM);
+                const proj=projects.find(p=>p.id===t.projectId);
+                const overdue=t.status!=="Done"&&isOverdue(t.dueDate);
+                const dueTomorrow=t.status!=="Done"&&t.dueDate===tomorrow();
+                return(
+                  <tr key={t.id} style={{borderBottom:"1px solid #f0f0f0",opacity:t.status==="Done"?0.5:1,background:overdue?"#fff5f5":dueTomorrow?"#fffdf0":""}}>
+                    <td style={{padding:"10px 14px"}}>
+                      <button onClick={()=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,status:tt.status==="Done"?"Pending":"Done"}:tt))}
+                        style={{width:18,height:18,borderRadius:4,border:`2px solid ${t.status==="Done"?"#2d6a4f":"#ddd"}`,background:t.status==="Done"?"#2d6a4f":"none",cursor:"pointer",color:"#fff",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        {t.status==="Done"?"✓":""}
+                      </button>
+                    </td>
+                    <td style={{padding:"10px 14px",fontWeight:600,textDecoration:t.status==="Done"?"line-through":"none"}}>{t.title}</td>
+                    <td style={{padding:"8px 14px"}}>
+                      <select value={t.assignedTo} onChange={e=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,assignedTo:parseInt(e.target.value)}:tt))}
+                        style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 6px",fontSize:11,fontFamily:"inherit",background:"#fff"}}>
+                        {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                    </td>
+                    <td style={{padding:"8px 14px"}}>
+                      <input type="date" value={t.dueDate||""} onChange={e=>setTasks(ts=>ts.map(tt=>tt.id===t.id?{...tt,dueDate:e.target.value}:tt))}
+                        style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 6px",fontSize:11,fontFamily:"inherit",color:overdue?"#c0392b":"#333",fontWeight:overdue?700:400}}/>
+                    </td>
+                    <td style={{padding:"10px 14px",color:"#666",fontSize:12}}>{proj?.client||"—"}</td>
+                    <td style={{padding:"10px 14px"}}><Badge label={t.status} color={t.status==="Done"?"#2d6a4f":"#c0392b"}/></td>
+                    <td style={{padding:"8px 8px"}}>
+                      <button onClick={()=>{if(window.confirm("Delete task: "+t.title+"?"))setTasks(ts=>ts.filter(x=>x.id!==t.id));}}
+                        style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#c0392b"}}>🗑</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
       </>}
     </div>
   );
@@ -1603,7 +1791,7 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
   return(
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex"}}>
       <div style={{flex:1,background:"#00000060"}} onClick={onClose}/>
-      <div style={{width:520,background:"#fff",overflowY:"auto",padding:24,display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{width:window.innerWidth<768?"100vw":520,background:"#fff",overflowY:"auto",padding:window.innerWidth<768?16:24,display:"flex",flexDirection:"column",gap:16}}>
 
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -1985,7 +2173,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
   return(
     <div style={{position:"fixed",inset:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{position:"absolute",inset:0,background:"#00000060"}} onClick={onClose}/>
-      <div style={{position:"relative",background:"#fff",borderRadius:12,padding:24,width:440,maxHeight:"90vh",overflowY:"auto",zIndex:1}}>
+      <div style={{position:"relative",background:"#fff",borderRadius:window.innerWidth<768?"12px 12px 0 0":12,padding:window.innerWidth<768?"20px 16px":24,width:window.innerWidth<768?"100vw":440,maxHeight:window.innerWidth<768?"85vh":"90vh",overflowY:"auto",zIndex:1,marginTop:window.innerWidth<768?"auto":0}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <h3 style={{margin:0,fontSize:16,fontWeight:800}}>{titles[modal.type]}</h3>
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:"#888"}}>✕</button>
