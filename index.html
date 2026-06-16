@@ -2,11 +2,36 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#1a1a2e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="The Lightists" />
+    <meta name="description" content="The Lightists — Lead to Installation CRM" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <title>The Lightists CRM</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: 'Inter', system-ui, sans-serif; background: #f5f5f7; }
+      #root { min-height: 100vh; }
+      /* Prevent iOS rubber-band scroll on outer body */
+      html, body { height: 100%; overflow: hidden; }
+      #root { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(r => console.log('SW registered:', r.scope))
+            .catch(e => console.log('SW error:', e));
+        });
+      }
+    </script>
   </body>
 </html>
