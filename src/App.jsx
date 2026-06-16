@@ -51,7 +51,7 @@ const TEAM = [
 const STAGES = [
   "Lead","Meeting Done","Design Started","Mockup Awaited","Mockup Done","Response Awaited",
   "Quotation Requested from Supplier","Quotation Sent","Order Confirmed","Fixtures Ordered","In Transit",
-  "Delivered","Installation","Project on Hold","Closed"
+  "Delivered","Installation","Project on Hold","Project Completed","Closed"
 ];
 
 const today    = () => new Date().toISOString().split("T")[0];
@@ -323,6 +323,8 @@ export default function LightCRM() {
           onUpdateDriveLinks={(pid,links)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,driveLinks:links,driveLink:links[0]||""}))}
           onAddTask={(task)=>setTasks(ts=>[...ts,task])}
           onEditDetails={(pid,form)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,client:form.client,source:form.source,currency:form.currency,value:form.value,assignedTo:p.assignedTo.map((id,i)=>i===0?form.assignedTo0:id),followUpDate:form.followUpDate,closureDate:form.closureDate,isQuoted:form.isQuoted,quotedValue:form.quotedValue,isOrdered:form.isOrdered,orderValue:form.orderValue,lastUpdated:today()}))}
+          onUpdateContacts={(pid,contacts)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,contacts,lastUpdated:today()}))}
+          onUpdateHandover={(pid,handover)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,handover,lastUpdated:today()}))}
         />
       )}
 
@@ -710,7 +712,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
                   </div>
                   <div style={{fontSize:11,color:"#888"}}>
                     {l.firm&&<span style={{fontWeight:600,color:"#555"}}>{l.firm} · </span>}
-                    {l.type} · {l.source}{l.city?` · ${l.city}`:""} · {l.contact}
+                    {l.type} · {l.source}{l.city?` · ${l.city}`:""} · {l.contact}{l.email?` · ${l.email}`:""}
                   </div>
                 </div>
                 <Badge label={l.meetingStatus} color={l.meetingStatus==="Met"?"#2d6a4f":"#533483"}/>
@@ -748,6 +750,9 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
                       <select value={ed.assignedTo??l.assignedTo} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],assignedTo:parseInt(e.target.value)}}))} style={inputS}>
                         {TEAM.map(tm=><option key={tm.id} value={tm.id}>{tm.name}</option>)}
                       </select>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>EMAIL</div>
+                      <input type="email" value={ed.email??l.email??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],email:e.target.value}}))} style={inputS} placeholder="email@example.com"/>
                     </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>NOTES</div>
                       <input value={ed.notes??l.notes??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],notes:e.target.value}}))} style={inputS} placeholder="Update notes…"/>
@@ -1407,8 +1412,153 @@ function TeamTab({currentUser}){
   );
 }
 
+// ─── Handover Section (local state + Save) ───────────────────────────────────
+function HandoverSection({project, onUpdateHandover}){
+  const [local, setLocal] = useState(project.handover||{});
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const toggle = (key) => {
+    setLocal(h=>({...h,[key]:!h[key]}));
+    setDirty(true); setSaved(false);
+  };
+  const setNotes = (v) => {
+    setLocal(h=>({...h,notes:v}));
+    setDirty(true); setSaved(false);
+  };
+  const save = () => {
+    onUpdateHandover(project.id, local);
+    setDirty(false); setSaved(true);
+    setTimeout(()=>setSaved(false), 2000);
+  };
+
+  const items = [
+    {key:"certSigned",    label:"Completion certificate signed"},
+    {key:"feedbackReceived", label:"Client feedback received"},
+    {key:"testimonialCollected", label:"Testimonial collected"},
+    {key:"imagesReceived", label:"Final project images received"},
+  ];
+  const done = items.filter(it=>local[it.key]).length;
+
+  return(
+    <div style={{background:"linear-gradient(135deg,#f0faf4,#e8f5e9)",border:"2px solid #2d6a4f44",borderRadius:10,padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:12,fontWeight:800,color:"#2d6a4f",textTransform:"uppercase",letterSpacing:"0.5px"}}>✅ Completion & Handover</div>
+        <span style={{fontSize:11,fontWeight:700,color:"#2d6a4f"}}>{done}/4 complete</span>
+      </div>
+      {/* Progress bar */}
+      <div style={{height:6,background:"#ddd",borderRadius:3,marginBottom:14}}>
+        <div style={{height:"100%",width:`${(done/4)*100}%`,background:"#2d6a4f",borderRadius:3,transition:"width .3s"}}/>
+      </div>
+      {items.map(item=>(
+        <label key={item.key} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,cursor:"pointer"}}>
+          <input type="checkbox" checked={!!local[item.key]} onChange={()=>toggle(item.key)}
+            style={{width:16,height:16,cursor:"pointer",accentColor:"#2d6a4f"}}/>
+          <span style={{fontSize:13,color:local[item.key]?"#2d6a4f":"#333",fontWeight:local[item.key]?700:400,textDecoration:local[item.key]?"line-through":"none"}}>
+            {item.label}
+          </span>
+        </label>
+      ))}
+      <div style={{marginTop:8}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#2d6a4f",marginBottom:4}}>FEEDBACK / TESTIMONIAL NOTES</div>
+        <textarea value={local.notes||""} onChange={e=>setNotes(e.target.value)}
+          placeholder="Paste client feedback, testimonial, or notes here…"
+          style={{width:"100%",border:"1px solid #2d6a4f44",borderRadius:6,padding:"8px 10px",fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:70,boxSizing:"border-box",background:"#fff"}}/>
+      </div>
+      <button onClick={save}
+        style={{marginTop:10,width:"100%",background:saved?"#2d6a4f":"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"9px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:700,transition:"background .2s"}}>
+        {saved?"✅ Saved!":"💾 Save Handover"}
+      </button>
+    </div>
+  );
+}
+
+// ─── Contacts Section (read-only after save, local state while editing) ───────
+function ContactsSection({project, onUpdateContacts, inputS}){
+  const [adding, setAdding] = useState(false);
+  const [newContact, setNewContact] = useState({designation:"",name:"",phone:"",email:""});
+
+  const saveNew = () => {
+    if(!newContact.name.trim()&&!newContact.phone.trim()) return;
+    const updated = [...(project.contacts||[]), {...newContact, id:Date.now()}];
+    onUpdateContacts(project.id, updated);
+    setNewContact({designation:"",name:"",phone:"",email:""});
+    setAdding(false);
+  };
+  const remove = (i) => {
+    if(!window.confirm("Remove this contact?")) return;
+    onUpdateContacts(project.id, (project.contacts||[]).filter((_,j)=>j!==i));
+  };
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px"}}>Project Contacts</div>
+        {!adding&&<button onClick={()=>setAdding(true)}
+          style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ Add Contact</button>}
+      </div>
+
+      {/* Saved contacts — read-only */}
+      {(project.contacts||[]).length===0&&!adding&&(
+        <div style={{fontSize:12,color:"#aaa",padding:"6px 0"}}>No contacts added yet.</div>
+      )}
+      {(project.contacts||[]).map((c,i)=>(
+        <div key={c.id||i} style={{background:"#f0f0f0",borderRadius:8,padding:"10px 12px",marginBottom:8,display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div>
+              {c.designation&&<div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:2}}>{c.designation}</div>}
+              <div style={{fontWeight:700,fontSize:13,color:"#1a1a2e"}}>{c.name||"—"}</div>
+              {c.phone&&<div style={{fontSize:12,color:"#555",marginTop:2}}>📞 {c.phone}</div>}
+              {c.email&&<div style={{fontSize:12,color:"#0f3460",marginTop:2}}>✉ {c.email}</div>}
+            </div>
+            <button onClick={()=>remove(i)}
+              style={{background:"none",border:"none",color:"#c0392b",fontSize:11,cursor:"pointer",padding:"0 4px",fontFamily:"inherit",flexShrink:0}}>🗑 Remove</button>
+          </div>
+        </div>
+      ))}
+
+      {/* Add new contact form */}
+      {adding&&(
+        <div style={{background:"#f8f8f8",borderRadius:8,padding:12,marginBottom:8,border:"1px solid #ddd"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:8}}>NEW CONTACT</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            <div>
+              <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:2}}>DESIGNATION</div>
+              <input value={newContact.designation} onChange={e=>setNewContact(f=>({...f,designation:e.target.value}))}
+                placeholder="e.g. Site Manager" style={{...inputS,fontSize:11}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:2}}>NAME *</div>
+              <input value={newContact.name} onChange={e=>setNewContact(f=>({...f,name:e.target.value}))}
+                placeholder="Full name" style={{...inputS,fontSize:11}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:2}}>PHONE</div>
+              <input value={newContact.phone} onChange={e=>setNewContact(f=>({...f,phone:e.target.value}))}
+                placeholder="+91 XXXXX XXXXX" style={{...inputS,fontSize:11}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:2}}>EMAIL</div>
+              <input type="email" value={newContact.email} onChange={e=>setNewContact(f=>({...f,email:e.target.value}))}
+                placeholder="email@example.com" style={{...inputS,fontSize:11}}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,marginTop:10}}>
+            <button onClick={saveNew}
+              style={{background:"#2d6a4f",color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:700,flex:1}}>
+              💾 Save Contact
+            </button>
+            <button onClick={()=>{setAdding(false);setNewContact({designation:"",name:"",phone:"",email:""}); }}
+              style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Project Drawer ───────────────────────────────────────────────────────────
-function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddComment,onUpdateDriveLinks,onAddTask,onEditDetails}){
+function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddComment,onUpdateDriveLinks,onAddTask,onEditDetails,onUpdateContacts,onUpdateHandover}){
   const [comment,setComment]=useState("");
   const [commentAssignee,setCommentAssignee]=useState(currentUser.id);
   const [driveLink,setDriveLink]=useState(project?.driveLink||"");
@@ -1431,6 +1581,18 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
 
   const confirmStageChange=()=>{
     if(!stageComment.trim())return;
+    // If changing to Project Completed, warn about pending tasks
+    if(pendingStage==="Project Completed"){
+      const pendingTasks=projTasks.filter(t=>t.status!=="Done");
+      if(pendingTasks.length>0){
+        const proceed=window.confirm(
+          `⚠️ There are ${pendingTasks.length} pending task(s) on this project:\n\n` +
+          pendingTasks.map(t=>`• ${t.title}`).join("\n") +
+          "\n\nAre you sure you want to mark this project as Completed?"
+        );
+        if(!proceed)return;
+      }
+    }
     onChangeStage(project.id, pendingStage, stageComment);
     setPendingStage(null);
     setStageComment("");
@@ -1612,6 +1774,14 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
           {projTasks.length===0&&!showAddTask&&<div style={{fontSize:12,color:"#aaa",padding:"8px 0"}}>No tasks yet. Click + Assign Task to add one.</div>}
         </div>
 
+        {/* Project Contacts — local state with Save */}
+        <ContactsSection project={project} onUpdateContacts={onUpdateContacts} inputS={inputS}/>
+
+        {/* Completion & Handover — only visible when stage is Project Completed */}
+        {project.stage==="Project Completed"&&(
+          <HandoverSection project={project} onUpdateHandover={onUpdateHandover}/>
+        )}
+
         {/* Comments — assignable to anyone */}
         <div>
           <div style={{fontSize:12,fontWeight:700,color:"#555",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>Comments</div>
@@ -1690,7 +1860,8 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
         </div>
         <div><label style={lS}>Source</label><input style={iS} value={form.source||""} onChange={e=>set("source",e.target.value)} placeholder="Referral, Exhibition, Instagram…"/></div>
         <div><label style={lS}>City</label><input style={iS} value={form.city||""} onChange={e=>set("city",e.target.value)} placeholder="e.g. Delhi, Gurugram, Mumbai…"/></div>
-        <div><label style={lS}>Contact</label><input style={iS} value={form.contact||""} onChange={e=>set("contact",e.target.value)} placeholder="+91 XXXXX XXXXX"/></div>
+        <div><label style={lS}>Contact / Phone</label><input style={iS} value={form.contact||""} onChange={e=>set("contact",e.target.value)} placeholder="+91 XXXXX XXXXX"/></div>
+        <div><label style={lS}>Email</label><input type="email" style={iS} value={form.email||""} onChange={e=>set("email",e.target.value)} placeholder="email@example.com"/></div>
         <div><label style={lS}>Follow-up date</label><input type="date" style={iS} value={form.followUpDate||addDays(today(),3)} onChange={e=>set("followUpDate",e.target.value)}/></div>
         <div><label style={lS}>Notes</label><input style={iS} value={form.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
         <div><label style={lS}>Assigned to</label>
@@ -1698,7 +1869,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
             {TEAM.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
-        <button onClick={()=>{if(form.name)onSaveLead({name:form.name,firm:form.firm||"",type:form.type||"End Client",source:form.source||"",city:form.city||"",contact:form.contact||"",followUpDate:form.followUpDate||addDays(today(),3),meetingStatus:"Not yet",notes:form.notes||"",assignedTo:form.assignedTo||currentUser.id});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Lead</button>
+        <button onClick={()=>{if(form.name)onSaveLead({name:form.name,firm:form.firm||"",type:form.type||"End Client",source:form.source||"",city:form.city||"",contact:form.contact||"",email:form.email||"",followUpDate:form.followUpDate||addDays(today(),3),meetingStatus:"Not yet",notes:form.notes||"",assignedTo:form.assignedTo||currentUser.id});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Lead</button>
       </div>
     );
     if(modal.type==="newProject") return(
