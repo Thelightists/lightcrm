@@ -1324,6 +1324,10 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
   const [dashMemberFilter,setDashMemberFilter]=useState("all");
   const [editing,setEditing]=useState({});
   const [editingIds,setEditingIds]=useState({});
+  const [editingSub,setEditingSub]=useState({});
+  const [editingSubIds,setEditingSubIds]=useState({});
+  const [editingNotes,setEditingNotes]=useState({});
+  const [editingNotesIds,setEditingNotesIds]=useState({});
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"5px 8px",fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
   const disabledS={background:"#f5f5f5",color:"#888",cursor:"not-allowed"};
   const updateSubPayment=(payId,spId,patch)=>setPayments(ps=>ps.map(p=>p.id!==payId?p:{...p,subPayments:p.subPayments.map(sp=>sp.id!==spId?sp:{...sp,...patch})}));
@@ -1404,27 +1408,80 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
                   </div>
                 )}
                 <div style={{fontSize:12,fontWeight:700,color:"#555",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.5px"}}>Sub-Payments ({pay.subPayments.length})</div>
-                {pay.subPayments.map(sp=>(
+                {pay.subPayments.map(sp=>{
+                  const spEditing = editingSubIds[sp.id];
+                  const spd = editingSub[sp.id]||{};
+                  return(
                   <div key={sp.id} style={{background:sp.type==="made"?"#f0faf4":"#fff8f0",border:`1px solid ${sp.type==="made"?"#2d6a4f33":"#c0392b33"}`,borderRadius:8,padding:"10px 12px",marginBottom:8}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                      <Badge label={sp.type==="made"?"▲ Outgoing":"▼ Incoming"} color={sp.type==="made"?"#0f3460":"#2d6a4f"}/>
-                      <span style={{fontWeight:700}}>{currencySymbol[sp.currency]}{sp.amount.toLocaleString()}</span>
-                      <span style={{fontSize:11,color:"#888"}}>{sp.date||"—"}</span>
-                      {sp.swiftRef&&<span style={{fontSize:11,fontFamily:"monospace",color:"#0f3460"}}>{sp.swiftRef}</span>}
-                      <span style={{fontSize:11,color:"#888",flex:1}}>{sp.notes}</span>
-                      <select value={sp.status} onChange={e=>updateSubPayment(pay.id,sp.id,{status:e.target.value})}
-                        style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 6px",fontSize:11,fontFamily:"inherit",background:"#fff"}}>
-                        {["Pending","Confirmed","Failed"].map(s=><option key={s}>{s}</option>)}
-                      </select>
-                    </div>
-                    {sp.status==="Pending"&&(
+                    {!spEditing?(
+                      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                        <Badge label={sp.type==="made"?"▲ Outgoing":"▼ Incoming"} color={sp.type==="made"?"#0f3460":"#2d6a4f"}/>
+                        <span style={{fontWeight:700}}>{currencySymbol[sp.currency]}{sp.amount.toLocaleString()}</span>
+                        <span style={{fontSize:11,color:"#888"}}>{sp.date||"—"}</span>
+                        {sp.swiftRef&&<span style={{fontSize:11,fontFamily:"monospace",color:"#0f3460"}}>{sp.swiftRef}</span>}
+                        <span style={{fontSize:11,color:"#888",flex:1}}>{sp.notes}</span>
+                        <select value={sp.status} onChange={e=>updateSubPayment(pay.id,sp.id,{status:e.target.value})}
+                          style={{border:"1px solid #ddd",borderRadius:5,padding:"3px 6px",fontSize:11,fontFamily:"inherit",background:"#fff"}}>
+                          {["Pending","Confirmed","Failed"].map(s=><option key={s}>{s}</option>)}
+                        </select>
+                        <button onClick={()=>setEditingSubIds(ev=>({...ev,[sp.id]:true}))}
+                          style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",fontFamily:"inherit",color:"#555"}}>✏️</button>
+                        <button onClick={()=>{if(window.confirm("Delete this sub-payment?"))setPayments(ps=>ps.map(p=>p.id!==pay.id?p:{...p,subPayments:p.subPayments.filter(x=>x.id!==sp.id)}));}}
+                          style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:"#c0392b"}}>🗑</button>
+                      </div>
+                    ):(
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                          <div><div style={{fontSize:10,color:"#888",marginBottom:3}}>TYPE</div>
+                            <select value={spd.type??sp.type} onChange={e=>setEditingSub(ev=>({...ev,[sp.id]:{...ev[sp.id],type:e.target.value}}))} style={inputS}>
+                              <option value="made">▲ Outgoing</option><option value="received">▼ Incoming</option>
+                            </select>
+                          </div>
+                          <div><div style={{fontSize:10,color:"#888",marginBottom:3}}>AMOUNT</div>
+                            <input type="number" value={spd.amount??sp.amount} onChange={e=>setEditingSub(ev=>({...ev,[sp.id]:{...ev[sp.id],amount:e.target.value}}))} style={inputS}/>
+                          </div>
+                          <div><div style={{fontSize:10,color:"#888",marginBottom:3}}>CURRENCY</div>
+                            <select value={spd.currency??sp.currency} onChange={e=>setEditingSub(ev=>({...ev,[sp.id]:{...ev[sp.id],currency:e.target.value}}))} style={inputS}>
+                              {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div><div style={{fontSize:10,color:"#888",marginBottom:3}}>DATE</div>
+                            <input type="date" value={spd.date??sp.date??""} onChange={e=>setEditingSub(ev=>({...ev,[sp.id]:{...ev[sp.id],date:e.target.value}}))} style={inputS}/>
+                          </div>
+                          <div><div style={{fontSize:10,color:"#888",marginBottom:3}}>SWIFT REF</div>
+                            <input value={spd.swiftRef??sp.swiftRef??""} onChange={e=>setEditingSub(ev=>({...ev,[sp.id]:{...ev[sp.id],swiftRef:e.target.value}}))} style={inputS}/>
+                          </div>
+                          <div><div style={{fontSize:10,color:"#888",marginBottom:3}}>STATUS</div>
+                            <select value={spd.status??sp.status} onChange={e=>setEditingSub(ev=>({...ev,[sp.id]:{...ev[sp.id],status:e.target.value}}))} style={inputS}>
+                              {["Pending","Confirmed","Failed"].map(s=><option key={s}>{s}</option>)}
+                            </select>
+                          </div>
+                          <div style={{gridColumn:"1 / -1"}}><div style={{fontSize:10,color:"#888",marginBottom:3}}>NOTES</div>
+                            <input value={spd.notes??sp.notes??""} onChange={e=>setEditingSub(ev=>({...ev,[sp.id]:{...ev[sp.id],notes:e.target.value}}))} style={inputS}/>
+                          </div>
+                        </div>
+                        <div style={{display:"flex",gap:8}}>
+                          <button onClick={()=>{
+                            const patch={...spd}; if(patch.amount!==undefined)patch.amount=parseFloat(patch.amount)||0;
+                            updateSubPayment(pay.id,sp.id,patch);
+                            setEditingSub(ev=>{const n={...ev};delete n[sp.id];return n;});
+                            setEditingSubIds(ev=>{const n={...ev};delete n[sp.id];return n;});
+                          }} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Save</button>
+                          <button onClick={()=>{
+                            setEditingSub(ev=>{const n={...ev};delete n[sp.id];return n;});
+                            setEditingSubIds(ev=>{const n={...ev};delete n[sp.id];return n;});
+                          }} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                    {!spEditing&&sp.status==="Pending"&&(
                       <div style={{marginTop:8,display:"flex",gap:6}}>
                         <input placeholder="Enter SWIFT ref when paid…" defaultValue={sp.swiftRef} onBlur={e=>updateSubPayment(pay.id,sp.id,{swiftRef:e.target.value})} style={{flex:1,border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:11,fontFamily:"inherit"}}/>
                         <input type="date" defaultValue={sp.date} onBlur={e=>updateSubPayment(pay.id,sp.id,{date:e.target.value})} style={{border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:11,fontFamily:"inherit"}}/>
                       </div>
                     )}
                   </div>
-                ))}
+                );})}
                 {showAddSub===pay.id?(
                   <div style={{background:"#f8f8f8",borderRadius:8,padding:12,marginTop:8}}>
                     <div style={{fontSize:12,fontWeight:700,marginBottom:10}}>Add Sub-Payment</div>
@@ -1466,9 +1523,30 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
                   <button onClick={()=>setShowAddSub(pay.id)} style={{marginTop:8,background:"none",border:"1px dashed #ddd",borderRadius:7,padding:"7px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit",color:"#555",width:"100%"}}>+ Add Sub-Payment</button>
                 )}
                 <div style={{marginTop:14}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>Payment Notes</div>
-                  <textarea defaultValue={pay.notes} onBlur={e=>setPayments(ps=>ps.map(p=>p.id!==pay.id?p:{...p,notes:e.target.value}))}
-                    style={{width:"100%",border:"1px solid #ddd",borderRadius:6,padding:"7px 10px",fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:50,boxSizing:"border-box"}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px"}}>Payment Notes</div>
+                    {!editingNotesIds[pay.id]&&(
+                      <button onClick={()=>setEditingNotesIds(ev=>({...ev,[pay.id]:true}))}
+                        style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"2px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit",color:"#555"}}>✏️ Edit</button>
+                    )}
+                  </div>
+                  <textarea
+                    value={editingNotes[pay.id]??pay.notes??""}
+                    disabled={!editingNotesIds[pay.id]}
+                    onChange={e=>setEditingNotes(ev=>({...ev,[pay.id]:e.target.value}))}
+                    style={{width:"100%",border:"1px solid #ddd",borderRadius:6,padding:"7px 10px",fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:50,boxSizing:"border-box",...(!editingNotesIds[pay.id]?disabledS:{})}}/>
+                  {editingNotesIds[pay.id]&&(
+                    <div style={{display:"flex",gap:8,marginTop:8}}>
+                      <button onClick={()=>{
+                        setPayments(ps=>ps.map(p=>p.id!==pay.id?p:{...p,notes:editingNotes[pay.id]??p.notes??""}));
+                        setEditingNotesIds(ev=>{const n={...ev};delete n[pay.id];return n;});
+                      }} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Save</button>
+                      <button onClick={()=>{
+                        setEditingNotes(ev=>{const n={...ev};delete n[pay.id];return n;});
+                        setEditingNotesIds(ev=>{const n={...ev};delete n[pay.id];return n;});
+                      }} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
