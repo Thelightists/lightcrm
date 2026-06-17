@@ -61,7 +61,7 @@ const TEAM = [
 const STAGES = [
   "Lead","Meeting Done","Design Started","Mockup Awaited","Mockup Done","Response Awaited",
   "Quotation Requested from Supplier","Quotation Sent","Order Confirmed","Fixtures Ordered","In Transit",
-  "Delivered","Installation","Project on Hold","Project Completed","Closed"
+  "Delivered","Installation","Project on Hold","Project Completed","Lost","Closed"
 ];
 
 const today    = () => new Date().toISOString().split("T")[0];
@@ -491,11 +491,12 @@ export default function LightCRM() {
           project={projects.find(p=>p.id===drawerProject)}
           tasks={tasks} currentUser={currentUser}
           onClose={()=>setDrawerProject(null)}
-          onChangeStage={(pid,newStage,comment)=>setProjects(ps=>ps.map(p=>{
+          onChangeStage={(pid,newStage,comment,lostReason)=>setProjects(ps=>ps.map(p=>{
             if(p.id!==pid)return p;
             return{...p,stage:newStage,lastUpdated:today(),
+              ...(lostReason!==undefined?{lostReason}:{}),
               stageHistory:[...p.stageHistory,{stage:newStage,date:today(),by:currentUser.name}],
-              comments:[...p.comments,{by:currentUser.name,date:today(),text:`Stage changed to: ${newStage}. ${comment}`}]};
+              comments:[...p.comments,{by:currentUser.name,date:today(),text:newStage==="Lost"?`Marked as Lost. Reason: ${comment}`:`Stage changed to: ${newStage}. ${comment}`}]};
           }))}
           onAddComment={(pid,text,byName)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,comments:[...p.comments,{by:byName||currentUser.name,date:today(),text}]}))}
           onUpdateDriveLinks={(pid,links)=>setProjects(ps=>ps.map(p=>p.id!==pid?p:{...p,driveLinks:links,driveLink:links[0]||""}))}
@@ -851,6 +852,7 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
 function LeadsTab({leads,currentUser,setModal,setLeads}){
   const [expanded,setExpanded]=useState(null);
   const [editing,setEditing]=useState({});
+  const [editingIds,setEditingIds]=useState({});
   const [statusFilter,setStatusFilter]=useState("active");
   const [dateFilter,setDateFilter]=useState("");
   const [filterMonth,setFilterMonth]=useState(new Date().getMonth());
@@ -858,6 +860,7 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
   const [nameFilter,setNameFilter]=useState("");
   const [dashMemberFilter,setDashMemberFilter]=useState("all");
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"4px 8px",fontSize:12,fontFamily:"inherit",width:"100%"};
+  const disabledS={background:"#f5f5f5",color:"#888",cursor:"not-allowed"};
   const updateLead=(id,patch)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,...patch}:l));
   const addComment=(id,text)=>setLeads(ls=>ls.map(l=>l.id===id?{...l,comments:[...(l.comments||[]),{by:currentUser.name,date:today(),text}]}:l));
 
@@ -1025,43 +1028,64 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
               </div>
               {isOpen&&(
                 <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px",display:"flex",flexDirection:"column",gap:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px"}}>Lead Details</div>
+                    {!editingIds[l.id]&&(
+                      <button onClick={()=>setEditingIds(ev=>({...ev,[l.id]:true}))}
+                        style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"4px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",color:"#555"}}>✏️ Edit</button>
+                    )}
+                  </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>NAME</div>
+                      <input value={ed.name??l.name??""} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],name:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}} placeholder="Client / Architect name"/>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>CONTACT / PHONE</div>
+                      <input value={ed.contact??l.contact??""} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],contact:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}} placeholder="+91 XXXXX XXXXX"/>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>TYPE</div>
+                      <select value={ed.type??l.type} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],type:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}}>
+                        {["End Client","Architect","Interior Designer","Developer"].map(t=><option key={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>SOURCE</div>
+                      <input value={ed.source??l.source??""} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],source:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}} placeholder="Referral, Exhibition, Instagram…"/>
+                    </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>LEAD STATUS</div>
-                      <select value={ed.leadStatus??lStatus} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],leadStatus:e.target.value}}))} style={inputS}>
+                      <select value={ed.leadStatus??lStatus} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],leadStatus:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}}>
                         {["active","converted","dead"].map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
                       </select>
                     </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>MEETING STATUS</div>
-                      <select value={ed.meetingStatus??l.meetingStatus} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],meetingStatus:e.target.value}}))} style={inputS}>
+                      <select value={ed.meetingStatus??l.meetingStatus} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],meetingStatus:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}}>
                         {["Not yet","Meeting scheduled","Met","Proposal sent","Converted"].map(s=><option key={s}>{s}</option>)}
                       </select>
                     </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>FOLLOW-UP DATE</div>
-                      <input type="date" value={ed.followUpDate??l.followUpDate??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],followUpDate:e.target.value}}))} style={inputS}/>
+                      <input type="date" value={ed.followUpDate??l.followUpDate??""} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],followUpDate:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}}/>
                     </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>FIRM / COMPANY</div>
-                      <input value={ed.firm??l.firm??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],firm:e.target.value}}))} style={inputS} placeholder="Firm or company name…"/>
+                      <input value={ed.firm??l.firm??""} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],firm:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}} placeholder="Firm or company name…"/>
                     </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>CITY</div>
-                      <input value={ed.city??l.city??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],city:e.target.value}}))} style={inputS} placeholder="e.g. Delhi, Gurugram…"/>
+                      <input value={ed.city??l.city??""} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],city:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}} placeholder="e.g. Delhi, Gurugram…"/>
                     </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>ASSIGNED TO</div>
-                      <select value={ed.assignedTo??l.assignedTo} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],assignedTo:parseInt(e.target.value)}}))} style={inputS}>
+                      <select value={ed.assignedTo??l.assignedTo} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],assignedTo:parseInt(e.target.value)}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}}>
                         {TEAM.map(tm=><option key={tm.id} value={tm.id}>{tm.name}</option>)}
                       </select>
                     </div>
                     <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>EMAIL</div>
-                      <input type="email" value={ed.email??l.email??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],email:e.target.value}}))} style={inputS} placeholder="email@example.com"/>
+                      <input type="email" value={ed.email??l.email??""} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],email:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}} placeholder="email@example.com"/>
                     </div>
-                    <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>NOTES</div>
-                      <input value={ed.notes??l.notes??""} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],notes:e.target.value}}))} style={inputS} placeholder="Update notes…"/>
+                    <div style={{gridColumn:"1 / -1"}}><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>NOTES</div>
+                      <input value={ed.notes??l.notes??""} disabled={!editingIds[l.id]} onChange={e=>setEditing(ev=>({...ev,[l.id]:{...ev[l.id],notes:e.target.value}}))} style={{...inputS,...(!editingIds[l.id]?disabledS:{})}} placeholder="Update notes…"/>
                     </div>
                   </div>
-                  {Object.keys(ed).length>0&&(
+                  {editingIds[l.id]&&(
                     <div style={{display:"flex",gap:8}}>
-                      <button onClick={()=>{updateLead(l.id,ed);setEditing(ev=>{const n={...ev};delete n[l.id];return n;});}}
+                      <button onClick={()=>{updateLead(l.id,ed);setEditing(ev=>{const n={...ev};delete n[l.id];return n;});setEditingIds(ev=>{const n={...ev};delete n[l.id];return n;});}}
                         style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Save Changes</button>
-                      <button onClick={()=>setEditing(ev=>{const n={...ev};delete n[l.id];return n;})}
+                      <button onClick={()=>{setEditing(ev=>{const n={...ev};delete n[l.id];return n;});setEditingIds(ev=>{const n={...ev};delete n[l.id];return n;});}}
                         style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Discard</button>
                     </div>
                   )}
@@ -1152,9 +1176,9 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
                 <Badge label={q.status} color={q.status==="Confirmed"?"#2d6a4f":"#533483"}/>
                 <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
                 {currentUser.role==="operations"&&(
-                  <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete lead: "+l.name+"? This cannot be undone."))setLeads(ls=>ls.filter(x=>x.id!==l.id));}}
+                  <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete quotation: "+q.client+"? This cannot be undone."))setQuotations(qs=>qs.filter(x=>x.id!==q.id));}}
                     style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#c0392b",marginLeft:4}}
-                    title="Delete lead (Mohini only)">🗑</button>
+                    title="Delete quotation (Mohini only)">🗑</button>
                 )}
               </div>
               {isOpen&&(
@@ -1256,9 +1280,9 @@ function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
                 <Badge label={o.status} color="#0f3460"/>
                 <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
                 {currentUser.role==="operations"&&(
-                  <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete lead: "+l.name+"? This cannot be undone."))setLeads(ls=>ls.filter(x=>x.id!==l.id));}}
+                  <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete order: "+(proj?.client||o.projectId)+"? This cannot be undone."))setOrders(os=>os.filter(x=>x.id!==o.id));}}
                     style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#c0392b",marginLeft:4}}
-                    title="Delete lead (Mohini only)">🗑</button>
+                    title="Delete order (Mohini only)">🗑</button>
                 )}
               </div>
               {isOpen&&(
@@ -1298,11 +1322,15 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
   const [search,setSearch]=useState("");
   const [nameFilter,setNameFilter]=useState("");
   const [dashMemberFilter,setDashMemberFilter]=useState("all");
+  const [editing,setEditing]=useState({});
+  const [editingIds,setEditingIds]=useState({});
   const inputS={border:"1px solid #ddd",borderRadius:5,padding:"5px 8px",fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
+  const disabledS={background:"#f5f5f5",color:"#888",cursor:"not-allowed"};
   const updateSubPayment=(payId,spId,patch)=>setPayments(ps=>ps.map(p=>p.id!==payId?p:{...p,subPayments:p.subPayments.map(sp=>sp.id!==spId?sp:{...sp,...patch})}));
+  const updatePayment=(id,patch)=>setPayments(ps=>ps.map(p=>p.id===id?{...p,...patch}:p));
   const addSubPayment=(payId)=>{
     if(!subForm.amount||!subForm.type)return;
-    const newSp={id:`SP${Date.now()}`,amount:parseFloat(subForm.amount),currency:subForm.currency||"EUR",type:subForm.type,swiftRef:subForm.swiftRef||"",date:subForm.date||today(),status:subForm.status||"Pending",notes:subForm.notes||""};
+    const newSp={id:`SP${Date.now()}`,amount:parseFloat(subForm.amount),currency:subForm.currency||"INR",type:subForm.type,swiftRef:subForm.swiftRef||"",date:subForm.date||today(),status:subForm.status||"Pending",notes:subForm.notes||""};
     setPayments(ps=>ps.map(p=>p.id!==payId?p:{...p,subPayments:[...p.subPayments,newSp]}));
     setSubForm({});setShowAddSub(null);
   };
@@ -1318,17 +1346,21 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
         return(pay.client||"").toLowerCase().includes(q)||(pay.supplier||"").toLowerCase().includes(q);
       }).map(pay=>{
         const isOpen=expanded===pay.id;
+        const ed=editing[pay.id]||{};
         const totalMade=pay.subPayments.filter(s=>s.type==="made"&&s.status==="Confirmed").reduce((a,s)=>a+s.amount,0);
         const totalPending=pay.subPayments.filter(s=>s.status==="Pending").reduce((a,s)=>a+s.amount,0);
+        const totalOrderValue=Number(pay.totalAmount)||0;
+        const remaining=totalOrderValue-totalMade;
         return(
           <div key={pay.id} style={{background:"#fff",borderRadius:10,overflow:"hidden",border:isOpen?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
             <div style={{display:"flex",alignItems:"center"}}>
               <div onClick={()=>setExpanded(isOpen?null:pay.id)} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",cursor:"pointer",flex:1}}>
                 <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{pay.client} <span style={{color:"#888",fontWeight:400,fontSize:12}}>· {pay.supplier}</span></div>
-                  <div style={{fontSize:11,color:"#888"}}>{pay.id} · Order: {pay.orderId}</div></div>
+                  <div style={{fontSize:11,color:"#888"}}>{pay.id} · Order: {pay.orderId}{totalOrderValue>0&&<> · Total Order Value: {currencySymbol[pay.currency]}{totalOrderValue.toLocaleString()}</>}</div></div>
                 <div style={{textAlign:"right"}}>
                   <div style={{fontSize:12,color:"#2d6a4f",fontWeight:700}}>✓ {currencySymbol[pay.currency]}{totalMade.toLocaleString()} paid</div>
                   {totalPending>0&&<div style={{fontSize:11,color:"#c0392b"}}>⏳ {currencySymbol[pay.currency]}{totalPending.toLocaleString()} pending</div>}
+                  {totalOrderValue>0&&<div style={{fontSize:11,color:remaining>0?"#888":"#2d6a4f"}}>{remaining>0?`Balance: ${currencySymbol[pay.currency]}${remaining.toLocaleString()}`:"Fully paid"}</div>}
                 </div>
                 <span style={{color:"#aaa",fontSize:14}}>{isOpen?"▲":"▼"}</span>
               </div>
@@ -1337,6 +1369,40 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
             </div>
             {isOpen&&(
               <div style={{borderTop:"1px solid #f0f0f0",padding:"14px 16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px"}}>Payment Record Details</div>
+                  {!editingIds[pay.id]&&(
+                    <button onClick={()=>setEditingIds(ev=>({...ev,[pay.id]:true}))}
+                      style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"4px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",color:"#555"}}>✏️ Edit</button>
+                  )}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>CLIENT NAME</div>
+                    <input value={ed.client??pay.client??""} disabled={!editingIds[pay.id]} onChange={e=>setEditing(ev=>({...ev,[pay.id]:{...ev[pay.id],client:e.target.value}}))} style={{...inputS,...(!editingIds[pay.id]?disabledS:{})}}/>
+                  </div>
+                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>SUPPLIER</div>
+                    <input value={ed.supplier??pay.supplier??""} disabled={!editingIds[pay.id]} onChange={e=>setEditing(ev=>({...ev,[pay.id]:{...ev[pay.id],supplier:e.target.value}}))} style={{...inputS,...(!editingIds[pay.id]?disabledS:{})}}/>
+                  </div>
+                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>CURRENCY</div>
+                    <select value={ed.currency??pay.currency??"INR"} disabled={!editingIds[pay.id]} onChange={e=>setEditing(ev=>({...ev,[pay.id]:{...ev[pay.id],currency:e.target.value}}))} style={{...inputS,...(!editingIds[pay.id]?disabledS:{})}}>
+                      {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>TOTAL ORDER VALUE</div>
+                    <input type="number" value={ed.totalAmount??pay.totalAmount??""} disabled={!editingIds[pay.id]} onChange={e=>setEditing(ev=>({...ev,[pay.id]:{...ev[pay.id],totalAmount:e.target.value}}))} style={{...inputS,...(!editingIds[pay.id]?disabledS:{})}}/>
+                  </div>
+                  <div><div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>LINKED ORDER ID</div>
+                    <input value={ed.orderId??pay.orderId??""} disabled={!editingIds[pay.id]} onChange={e=>setEditing(ev=>({...ev,[pay.id]:{...ev[pay.id],orderId:e.target.value}}))} style={{...inputS,...(!editingIds[pay.id]?disabledS:{})}} placeholder="e.g. O1234567890"/>
+                  </div>
+                </div>
+                {editingIds[pay.id]&&(
+                  <div style={{display:"flex",gap:8,marginBottom:14}}>
+                    <button onClick={()=>{const patch={...ed};if(patch.totalAmount!==undefined)patch.totalAmount=parseFloat(patch.totalAmount)||0;updatePayment(pay.id,patch);setEditing(ev=>{const n={...ev};delete n[pay.id];return n;});setEditingIds(ev=>{const n={...ev};delete n[pay.id];return n;});}}
+                      style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Save Changes</button>
+                    <button onClick={()=>{setEditing(ev=>{const n={...ev};delete n[pay.id];return n;});setEditingIds(ev=>{const n={...ev};delete n[pay.id];return n;});}}
+                      style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"6px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Discard</button>
+                  </div>
+                )}
                 <div style={{fontSize:12,fontWeight:700,color:"#555",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.5px"}}>Sub-Payments ({pay.subPayments.length})</div>
                 {pay.subPayments.map(sp=>(
                   <div key={sp.id} style={{background:sp.type==="made"?"#f0faf4":"#fff8f0",border:`1px solid ${sp.type==="made"?"#2d6a4f33":"#c0392b33"}`,borderRadius:8,padding:"10px 12px",marginBottom:8}}>
@@ -2003,7 +2069,7 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
         if(!proceed)return;
       }
     }
-    onChangeStage(project.id, pendingStage, stageComment);
+    onChangeStage(project.id, pendingStage, stageComment, pendingStage==="Lost"?stageComment:undefined);
     setPendingStage(null);
     setStageComment("");
   };
@@ -2099,14 +2165,16 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
           </select>
           {pendingStage&&pendingStage!==project.stage&&(
             <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
-              <div style={{fontSize:12,color:"#c9a84c",fontWeight:600}}>Changing stage to: {pendingStage}</div>
+              <div style={{fontSize:12,color:pendingStage==="Lost"?"#c0392b":"#c9a84c",fontWeight:600}}>
+                {pendingStage==="Lost"?"⚠ Marking this project as Lost":`Changing stage to: ${pendingStage}`}
+              </div>
               <textarea value={stageComment} onChange={e=>setStageComment(e.target.value)}
-                placeholder="Add a comment about this stage change (required)…"
-                style={{...inputS,resize:"vertical",minHeight:60}}/>
+                placeholder={pendingStage==="Lost"?"Reason for losing this project (required)…":"Add a comment about this stage change (required)…"}
+                style={{...inputS,resize:"vertical",minHeight:60,border:pendingStage==="Lost"?"1px solid #c0392b":"1px solid #ddd"}}/>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={confirmStageChange}
-                  style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600,flex:1}}>
-                  Confirm Stage Change
+                  style={{background:pendingStage==="Lost"?"#c0392b":"#1a1a2e",color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600,flex:1}}>
+                  {pendingStage==="Lost"?"Confirm — Mark as Lost":"Confirm Stage Change"}
                 </button>
                 <button onClick={()=>{setPendingStage(null);setStageComment("");}}
                   style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
@@ -2234,6 +2302,14 @@ function ProjectDrawer({project,tasks,currentUser,onClose,onChangeStage,onAddCom
 function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSaveLead,onModalSave}){
   const [form,setForm]=useState({});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  // Pre-fill default dates on open so the value is actually in state,
+  // not just shown via a visual fallback (fixes "today's date doesn't save" bug)
+  useEffect(()=>{
+    if(modal?.type==="newTask") setForm(f=>({...f,dueDate:f.dueDate||today()}));
+    if(modal?.type==="newProject") setForm(f=>({...f,followUpDate:f.followUpDate||addDays(today(),5)}));
+    if(modal?.type==="newQuotation") setForm(f=>({...f,sentDate:f.sentDate||today(),followUpDate:f.followUpDate||addDays(today(),7)}));
+    if(modal?.type==="newOrder") setForm(f=>({...f,orderDate:f.orderDate||today(),eta:f.eta||addDays(today(),30)}));
+  },[modal?.type]);
   const iS={width:"100%",border:"1px solid #ddd",borderRadius:6,padding:"7px 10px",fontSize:13,fontFamily:"inherit",boxSizing:"border-box"};
   const lS={fontSize:12,fontWeight:700,color:"#555",display:"block",marginBottom:4};
 
@@ -2249,7 +2325,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
             {TEAM.map(m=><option key={m.id} value={m.id}>{m.name} ({m.designation})</option>)}
           </select>
         </div>
-        <div><label style={lS}>Due date *</label><input type="date" style={iS} value={form.dueDate||today()} onChange={e=>set("dueDate",e.target.value)}/></div>
+        <div><label style={lS}>Due date *</label><input type="date" style={iS} value={form.dueDate||""} onChange={e=>set("dueDate",e.target.value)}/></div>
         <div><label style={lS}>Linked project (optional)</label>
           <select style={iS} value={form.projectId||""} onChange={e=>set("projectId",e.target.value||null)}>
             <option value="">— Standalone task —</option>
@@ -2321,7 +2397,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
         <div><label style={lS}>Supplier *</label><input style={iS} value={form.supplier||""} onChange={e=>set("supplier",e.target.value)} placeholder="e.g. Flos Italy"/></div>
         <div style={{display:"flex",gap:10}}>
           <div style={{flex:1}}><label style={lS}>Currency</label>
-            <select style={iS} value={form.currency||"EUR"} onChange={e=>set("currency",e.target.value)}>
+            <select style={iS} value={form.currency||"INR"} onChange={e=>set("currency",e.target.value)}>
               {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
             </select>
           </div>
@@ -2334,7 +2410,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
             {["Awaiting reply","Confirmed","Rejected","Revised"].map(s=><option key={s}>{s}</option>)}
           </select>
         </div>
-        <button onClick={()=>{if(form.client&&form.supplier&&form.value)onModalSave({id:"Q"+Date.now(),projectId:form.projectId||"",client:form.client,supplier:form.supplier,currency:form.currency||"EUR",value:parseFloat(form.value),sentDate:form.sentDate||today(),followUpDate:form.followUpDate||addDays(today(),7),status:form.status||"Awaiting reply"});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Quotation</button>
+        <button onClick={()=>{if(form.client&&form.supplier&&form.value)onModalSave({id:"Q"+Date.now(),projectId:form.projectId||"",client:form.client,supplier:form.supplier,currency:form.currency||"INR",value:parseFloat(form.value),sentDate:form.sentDate||today(),followUpDate:form.followUpDate||addDays(today(),7),status:form.status||"Awaiting reply"});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Quotation</button>
       </div>
     );
     if(modal.type==="newOrder") return(
@@ -2348,7 +2424,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
         <div><label style={lS}>Vendor / Supplier *</label><input style={iS} value={form.vendor||""} onChange={e=>set("vendor",e.target.value)} placeholder="e.g. Artemide SRL"/></div>
         <div style={{display:"flex",gap:10}}>
           <div style={{flex:1}}><label style={lS}>Currency</label>
-            <select style={iS} value={form.currency||"EUR"} onChange={e=>set("currency",e.target.value)}>
+            <select style={iS} value={form.currency||"INR"} onChange={e=>set("currency",e.target.value)}>
               {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
             </select>
           </div>
@@ -2363,7 +2439,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
             {["Ordered","In Transit","Delivered","Cancelled"].map(s=><option key={s}>{s}</option>)}
           </select>
         </div>
-        <button onClick={()=>{if(form.vendor&&form.value&&form.projectId)onModalSave({id:"O"+Date.now(),projectId:form.projectId,vendor:form.vendor,currency:form.currency||"EUR",value:parseFloat(form.value),poNumber:form.poNumber||"",orderDate:form.orderDate||today(),expectedDispatch:"",trackingNumber:form.trackingNumber||"",dispatchDate:"",eta:form.eta||addDays(today(),30),status:form.status||"Ordered"});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Order</button>
+        <button onClick={()=>{if(form.vendor&&form.value&&form.projectId)onModalSave({id:"O"+Date.now(),projectId:form.projectId,vendor:form.vendor,currency:form.currency||"INR",value:parseFloat(form.value),poNumber:form.poNumber||"",orderDate:form.orderDate||today(),expectedDispatch:"",trackingNumber:form.trackingNumber||"",dispatchDate:"",eta:form.eta||addDays(today(),30),status:form.status||"Ordered"});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Order</button>
       </div>
     );
     if(modal.type==="newPayment") return(
@@ -2378,7 +2454,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
         <div><label style={lS}>Supplier *</label><input style={iS} value={form.supplier||""} onChange={e=>set("supplier",e.target.value)}/></div>
         <div style={{display:"flex",gap:10}}>
           <div style={{flex:1}}><label style={lS}>Currency</label>
-            <select style={iS} value={form.currency||"EUR"} onChange={e=>set("currency",e.target.value)}>
+            <select style={iS} value={form.currency||"INR"} onChange={e=>set("currency",e.target.value)}>
               {["INR","EUR","USD","GBP"].map(c=><option key={c}>{c}</option>)}
             </select>
           </div>
@@ -2386,7 +2462,7 @@ function Modal({modal,projects,currentUser,onClose,onSaveTask,onSaveProject,onSa
         </div>
         <div><label style={lS}>Linked Order ID (optional)</label><input style={iS} value={form.orderId||""} onChange={e=>set("orderId",e.target.value)} placeholder="e.g. O1234567890"/></div>
         <div><label style={lS}>Notes</label><input style={iS} value={form.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
-        <button onClick={()=>{if(form.client&&form.supplier)onModalSave({id:"PAY"+Date.now(),projectId:form.projectId||"",orderId:form.orderId||"",client:form.client,supplier:form.supplier,currency:form.currency||"EUR",totalAmount:parseFloat(form.totalAmount)||0,notes:form.notes||"",subPayments:[]});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Payment Record</button>
+        <button onClick={()=>{if(form.client&&form.supplier)onModalSave({id:"PAY"+Date.now(),projectId:form.projectId||"",orderId:form.orderId||"",client:form.client,supplier:form.supplier,currency:form.currency||"INR",totalAmount:parseFloat(form.totalAmount)||0,notes:form.notes||"",subPayments:[]});}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"10px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Add Payment Record</button>
       </div>
     );
     return null;
