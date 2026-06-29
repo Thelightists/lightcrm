@@ -52,7 +52,7 @@ const TEAM = [
   { id: 5,  name: "Ram",     designation: "Accounts",                  role: "accounts",    initials: "RA", color: "#2d6a4f" },
   { id: 6,  name: "Chaitra", designation: "Design Team",               role: "design",      initials: "CH", color: "#b5446e" },
   { id: 7,  name: "Manisha", designation: "Design Team",               role: "design",      initials: "MA", color: "#c17c74" },
-  { id: 8,  name: "Sheetal", designation: "Design Team",               role: "design",      initials: "SH", color: "#8b5e3c" },
+  { id: 8,  name: "Surya", designation: "Design Team",               role: "design",      initials: "SU", color: "#8b5e3c" },
   { id: 9,  name: "Rahul",   designation: "Design Team",               role: "design",      initials: "RH", color: "#4a7c59" },
   { id: 10, name: "Tarana",  designation: "Design Team",               role: "design",      initials: "TA", color: "#7b6d8d" },
   { id: 11, name: "Shivam",  designation: "Admin & Asset Management",  role: "admin",       initials: "SV", color: "#3d5a80" },
@@ -93,11 +93,11 @@ const Badge = ({ label, color }) => (
 const StageIndex = ({ stage }) => {
   const idx = STAGES.indexOf(stage);
   const pct = ((idx+1)/STAGES.length)*100;
-  const color = idx>=10?"#2d6a4f":idx>=7?"#0f3460":idx>=4?"#533483":"#b5446e";
+  const color = stage==="Lost"?"#888":idx>=10?"#2d6a4f":idx>=7?"#0f3460":idx>=4?"#533483":"#b5446e";
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:3}}>
-      <span style={{fontSize:11,color,fontWeight:700}}>{stage}</span>
-      <div style={{height:4,background:"#e8e8e8",borderRadius:2,width:80}}>
+    <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:80,maxWidth:130}}>
+      <span style={{fontSize:11,color,fontWeight:700,whiteSpace:"normal",lineHeight:1.3,wordBreak:"break-word"}}>{stage}</span>
+      <div style={{height:4,background:"#e8e8e8",borderRadius:2,width:80,flexShrink:0}}>
         <div style={{width:`${pct}%`,height:"100%",background:color,borderRadius:2,transition:"width .3s"}}/>
       </div>
     </div>
@@ -319,6 +319,8 @@ export default function LightCRM() {
   const [quotations, setQuotationsRaw] = useState([]);
   const [orders, setOrdersRaw]       = useState([]);
   const [payments, setPaymentsRaw]   = useState([]);
+  const [leaveRequests, setLeaveRequestsRaw] = useState([]);
+  const [leaveBalances, setLeaveBalancesRaw] = useState({}); // {memberId: {balance, lastAccrualMonth}}
   const [loading, setLoading]        = useState(true);
   const [saving, setSaving]          = useState("");
   const [drawerProject, setDrawerProject] = useState(null);
@@ -329,9 +331,10 @@ export default function LightCRM() {
   // ── Load all data from Sheets on mount & every 60s ──
   const loadAll = useCallback(async () => {
     try {
-      const [pRows, lRows, tRows, qRows, oRows, payRows] = await Promise.all([
+      const [pRows, lRows, tRows, qRows, oRows, payRows, lvRows, lvbRows] = await Promise.all([
         readSheet("Projects"), readSheet("Leads"), readSheet("Tasks"),
         readSheet("Quotations"), readSheet("Orders"), readSheet("Payments"),
+        readSheet("Leaves"), readSheet("LeaveBalances"),
       ]);
       if (pRows.length)   setProjectsRaw(fromRows(pRows));
       if (lRows.length)   setLeadsRaw(fromRows(lRows));
@@ -339,6 +342,13 @@ export default function LightCRM() {
       if (qRows.length)   setQuotationsRaw(fromRows(qRows));
       if (oRows.length)   setOrdersRaw(fromRows(oRows));
       if (payRows.length) setPaymentsRaw(fromRows(payRows));
+      if (lvRows.length)  setLeaveRequestsRaw(fromRows(lvRows));
+      if (lvbRows.length) {
+        // LeaveBalances stored as one row per member: id = memberId, data = {balance, lastAccrualMonth}
+        const balMap = {};
+        fromRows(lvbRows).forEach(r => { balMap[r.id] = r; });
+        setLeaveBalancesRaw(balMap);
+      }
       setLastSync(new Date().toLocaleTimeString());
     } catch(e) { console.error("Load error", e); }
     setLoading(false);
@@ -362,6 +372,98 @@ export default function LightCRM() {
   const setQuotations = (u) => persist(setQuotationsRaw, "Quotations", u, "Saving quotation…");
   const setOrders     = (u) => persist(setOrdersRaw,     "Orders",     u, "Saving order…");
   const setPayments   = (u) => persist(setPaymentsRaw,   "Payments",   u, "Saving payment…");
+  const setLeaveRequests = (u) => persist(setLeaveRequestsRaw, "Leaves", u, "Saving leave request…");
+  const setLeaveBalances = (u) => {
+    setSaving("Saving leave balance…");
+    setLeaveBalancesRaw(prev => {
+      const next = typeof u === "function" ? u(prev) : u;
+      const rows = Object.values(next); // array of {id, balance, lastAccrualMonth}
+      writeSheet("LeaveBalances", toRows(rows)).finally(() => setSaving(""));
+      return next;
+    });
+  };
+
+  // ── Monthly leave accrual — runs once per app load, after data is loaded ──
+  // Credits 1.5 days on the 1st of each month, capped at 8 days total.
+  // New joiners (no existing balance record) start fresh from the next 1st — no backdated credit.
+  const LEAVE_CAP = 8;
+  const ACCRUAL_PER_MONTH = 1.5;
+  useEffect(() => {
+    if (loading) return; // wait until initial load completes
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+    let changed = false;
+    const next = { ...leaveBalances };
+    TEAM.forEach(m => {
+      if (m.role === "director") return; // Aman does not accrue/apply for leave
+      const existing = next[m.id];
+      if (!existing) {
+        // New joiner — no backdated balance. Starts accruing from current month only
+        // if they didn't exist before (first time the system has seen them).
+        // We do NOT auto-create a balance here; balance only starts once explicitly
+        // initialised (by an accrual event going forward), so brand-new team members
+        // show 0 until the next natural accrual cycle creates their record.
+        return;
+      }
+      if (existing.lastAccrualMonth !== currentMonthKey) {
+        const newBalance = Math.min(LEAVE_CAP, (existing.balance||0) + ACCRUAL_PER_MONTH);
+        next[m.id] = { id: m.id, balance: newBalance, lastAccrualMonth: currentMonthKey };
+        changed = true;
+      }
+    });
+    if (changed) setLeaveBalances(next);
+  }, [loading]);
+
+  // One-time bootstrap: if LeaveBalances sheet is completely empty (first ever run),
+  // initialise every non-director team member at 0 balance for the current month.
+  useEffect(() => {
+    if (loading) return;
+    if (Object.keys(leaveBalances).length > 0) return; // already has data, don't overwrite
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+    const init = {};
+    TEAM.forEach(m => {
+      if (m.role === "director") return;
+      init[m.id] = { id: m.id, balance: ACCRUAL_PER_MONTH, lastAccrualMonth: currentMonthKey };
+    });
+    if (Object.keys(init).length > 0) setLeaveBalances(init);
+  }, [loading]);
+
+  // ── Leave request handlers ──
+  const submitLeaveRequest = (memberId, fromDate, toDate, reason) => {
+    const days = Math.round((new Date(toDate) - new Date(fromDate)) / (1000*60*60*24)) + 1;
+    const newReq = {
+      id: `LV${Date.now()}`, memberId, fromDate, toDate, days, reason: reason||"",
+      status: "Pending", requestedOn: today(), notified: false,
+    };
+    setLeaveRequests(reqs => [...reqs, newReq]);
+  };
+  const approveLeaveRequest = (reqId) => {
+    const req = leaveRequests.find(r=>r.id===reqId);
+    if (!req) return;
+    const bal = leaveBalances[req.memberId]?.balance || 0;
+    // Split into paid (from available balance) and unpaid (shortfall) days.
+    // Balance floors at 0 — never goes negative.
+    const paidDays = Math.min(bal, req.days);
+    const unpaidDays = Math.max(0, req.days - bal);
+    setLeaveBalances(prevBal => ({
+      ...prevBal,
+      [req.memberId]: { ...prevBal[req.memberId], id: req.memberId, balance: Math.max(0, bal - req.days) }
+    }));
+    setLeaveRequests(reqs => reqs.map(r => r.id===reqId ? {...r, status:"Approved", paidDays, unpaidDays} : r));
+  };
+  const rejectLeaveRequest = (reqId) => {
+    setLeaveRequests(reqs => reqs.map(r => r.id===reqId ? {...r, status:"Rejected", notified:false} : r));
+  };
+  const dismissLeaveNotification = (reqId) => {
+    setLeaveRequests(reqs => reqs.map(r => r.id===reqId ? {...r, notified:true} : r));
+  };
+  const adjustLeaveBalance = (memberId, newBalance) => {
+    setLeaveBalances(prevBal => ({
+      ...prevBal,
+      [memberId]: { ...prevBal[memberId], id: memberId, balance: Math.max(0, Math.min(LEAVE_CAP, newBalance)) }
+    }));
+  };
 
   // ── Alerts ──
   const alerts = useMemo(() => {
@@ -407,7 +509,7 @@ export default function LightCRM() {
     ...(canSeePayments(currentUser)?[{id:"payments",label:"Payments"}]:[]),
     {id:"delivery",label:"Delivery & Install"},
     {id:"tasks",label:"Tasks"},
-    ...(canAdmin?[{id:"team",label:"Team"}]:[]),
+    {id:"team",label:"Team"},
   ];
 
   return (
@@ -482,7 +584,10 @@ export default function LightCRM() {
         {tab==="payments"   && canSeePayments(currentUser) && <PaymentsTab payments={payments} orders={orders} setPayments={setPayments} currentUser={currentUser} setModal={setModal} isMobile={isMobile}/>}
         {tab==="delivery"   && <DeliveryTab projects={projects} tasks={tasks} setDrawerProject={setDrawerProject}/>}
         {tab==="tasks"      && <TasksTab tasks={tasks} projects={projects} leads={leads} currentUser={currentUser} setTasks={setTasks} setModal={setModal} setDrawerProject={setDrawerProject} isMobile={isMobile}/>}
-        {tab==="team"       && canAdmin && <TeamTab currentUser={currentUser} passwords={passwords} onUpdatePassword={updatePassword}/>}
+        {tab==="team"       && <TeamTab currentUser={currentUser} passwords={passwords} onUpdatePassword={updatePassword}
+          leaveRequests={leaveRequests} leaveBalances={leaveBalances}
+          onSubmitLeave={submitLeaveRequest} onApproveLeave={approveLeaveRequest} onRejectLeave={rejectLeaveRequest}
+          onDismissNotification={dismissLeaveNotification} onAdjustBalance={adjustLeaveBalance}/>}
       </div>
 
       {/* Project drawer */}
@@ -780,11 +885,19 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
   const _mobile = isMobile || (typeof window !== "undefined" && window.innerWidth <= 768);
   const [filter,setFilter]=useState("all");
   const [search,setSearch]=useState("");
-  const filtered=(filter==="all"?projects:projects.filter(p=>p.stage===filter))
+  // Stages that have moved to their own dedicated tabs — hidden from default Projects view
+  const HIDDEN_FROM_PROJECTS = ["Order Confirmed","Fixtures Ordered","In Transit","Delivered","Installation"];
+  const visibleProjects = projects.filter(p => {
+    if (filter !== "all") return p.stage === filter; // explicit filter always wins, including Lost
+    if (p.stage === "Lost") return false; // Lost is archived — only visible via explicit filter
+    if (HIDDEN_FROM_PROJECTS.includes(p.stage)) return false; // now live on Orders / Delivery & Install tabs
+    return true;
+  });
+  const filtered = visibleProjects
     .filter(p=>!search||p.client.toLowerCase().includes(search.toLowerCase())||p.id.toLowerCase().includes(search.toLowerCase())||(p.source||"").toLowerCase().includes(search.toLowerCase()));
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,gap:10,flexWrap:"wrap"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:10,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:8,alignItems:"center",flex:1,flexWrap:"wrap"}}>
           <select value={filter} onChange={e=>setFilter(e.target.value)} style={{border:"1px solid #ddd",borderRadius:6,padding:"6px 10px",fontSize:13,fontFamily:"inherit"}}>
             <option value="all">All Stages</option>
@@ -795,10 +908,15 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
         <button onClick={()=>setModal({type:"newProject"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Project</button>
       </div>
       <div style={{background:"#fff",borderRadius:10,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900,tableLayout:"fixed"}}>
+          <colgroup>
+            <col style={{width:"180px"}}/><col style={{width:"130px"}}/><col style={{width:"110px"}}/><col style={{width:"110px"}}/>
+            <col style={{width:"70px"}}/><col style={{width:"90px"}}/><col style={{width:"100px"}}/><col style={{width:"100px"}}/>
+            <col style={{width:"100px"}}/><col style={{width:"50px"}}/>
+          </colgroup>
           <thead><tr style={{background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
             {["Client","Stage","Quoted Value","Order Value","Drive","Assigned To","Last Updated","Closure Date","Follow-Up",""].map(h=>(
-              <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px"}}>{h}</th>
+              <th key={h} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,color:"#555",fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px",whiteSpace:"nowrap"}}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -808,9 +926,12 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
                 <tr key={p.id} style={{borderBottom:"1px solid #f0f0f0"}}
                   onMouseEnter={e=>e.currentTarget.style.background="#fafafa"}
                   onMouseLeave={e=>e.currentTarget.style.background=""}>
-                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",fontWeight:700,cursor:"pointer"}}>{p.client}<div style={{fontSize:10,color:"#888",fontWeight:400}}>{p.id}</div></td>
-                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",cursor:"pointer"}}><StageIndex stage={p.stage}/></td>
-                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",cursor:"pointer"}}>
+                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",fontWeight:700,cursor:"pointer",verticalAlign:"top",overflow:"hidden",textOverflow:"ellipsis"}}>
+                    <div style={{whiteSpace:"normal",wordBreak:"break-word",lineHeight:1.3}}>{p.client}</div>
+                    <div style={{fontSize:10,color:"#888",fontWeight:400,marginTop:2}}>{p.id}</div>
+                  </td>
+                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",cursor:"pointer",verticalAlign:"top"}}><StageIndex stage={p.stage}/></td>
+                  <td onClick={()=>setDrawerProject(p.id)} style={{padding:"12px 14px",cursor:"pointer",verticalAlign:"top"}}>
                     {p.isQuoted&&p.quotedValue
                       ? <span style={{fontWeight:600,color:"#0f3460"}}>{currencySymbol[p.currency]||"₹"}{Number(p.quotedValue).toLocaleString()}</span>
                       : <span style={{color:"#ccc",fontSize:11}}>—</span>}
@@ -1222,7 +1343,7 @@ function OrdersTab({orders,projects,setOrders,setModal,setDrawerProject}){
   const updateO=(id,patch)=>setOrders(os=>os.map(o=>o.id===id?{...o,...patch}:o));
 
   const projOrders=projects.filter(p=>{
-    if(!["Order Confirmed","Fixtures Ordered","In Transit"].includes(p.stage))return false;
+    if(!["Order Confirmed","Fixtures Ordered"].includes(p.stage))return false;
     if(!search)return true;
     return(p.client||"").toLowerCase().includes(search.toLowerCase());
   });
@@ -1561,7 +1682,7 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
 function DeliveryTab({projects,tasks,setDrawerProject}){
   const [search,setSearch]=useState("");
   const relevant=projects.filter(p=>{
-    if(!["Fixtures Ordered","In Transit","Delivered","Installation","Closed"].includes(p.stage))return false;
+    if(!["In Transit","Delivered","Installation","Closed"].includes(p.stage))return false;
     if(!search)return true;
     return(p.client||"").toLowerCase().includes(search.toLowerCase());
   });
@@ -1572,7 +1693,6 @@ function DeliveryTab({projects,tasks,setDrawerProject}){
     </div>
   );
   const groups=[
-    {label:"Fixtures Ordered",color:"#533483",stages:["Fixtures Ordered"]},
     {label:"In Transit",color:"#0f3460",stages:["In Transit"]},
     {label:"Delivered",color:"#2d6a4f",stages:["Delivered"]},
     {label:"Installation",color:"#c9a84c",stages:["Installation"]},
@@ -1635,10 +1755,12 @@ function DeliveryTab({projects,tasks,setDrawerProject}){
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDrawerProject,isMobile=false}){
   const _mobile = isMobile || (typeof window !== "undefined" && window.innerWidth <= 768);
-  const [statusFilter,setStatusFilter]=useState("all");
+  // Defaults per requirement: Tasks Only + Mine + Pending (Done hidden until explicitly selected)
+  const [statusFilter,setStatusFilter]=useState("Pending"); // "all" | "Pending" | "Done"
+  const [mineOnly,setMineOnly]=useState(true);
   const [memberFilter,setMemberFilter]=useState("all");
   const [search,setSearch]=useState("");
-  const [sectionFilter,setSectionFilter]=useState("all"); // "all"|"leads"|"projects"|"tasks"
+  const [sectionFilter,setSectionFilter]=useState("tasks"); // "all"|"leads"|"projects"|"tasks"
 
   const tomorrow = () => { const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().split("T")[0]; };
   const daysDiff2 = (date) => { const diff=(new Date(date)-new Date(today()))/(1000*60*60*24); return Math.round(diff); };
@@ -1658,24 +1780,26 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
 
   // Filter manual tasks
   const filteredTasks = tasks.filter(t => {
-    const statusOk = statusFilter==="all" ? true : statusFilter==="Pending"||statusFilter==="Done" ? t.status===statusFilter : true;
+    const statusOk = statusFilter==="all" ? true : t.status===statusFilter;
     const memberOk = memberFilter==="all" ? true : t.assignedTo===parseInt(memberFilter);
-    const mineOk = statusFilter==="mine" ? t.assignedTo===currentUser.id : true;
+    const mineOk = mineOnly ? t.assignedTo===currentUser.id : true;
     const proj = projects.find(p=>p.id===t.projectId);
     const searchOk = !search || (t.title||"").toLowerCase().includes(search.toLowerCase()) || (proj?.client||"").toLowerCase().includes(search.toLowerCase()) || (getMember(t.assignedTo,TEAM)?.name||"").toLowerCase().includes(search.toLowerCase());
     return statusOk && memberOk && mineOk && searchOk;
   });
 
-  // Filter follow-up sections by search + member
+  // Filter follow-up sections by search + member + mine
   const filtFollowLeads = followUpLeads.filter(l => {
     const memberOk = memberFilter==="all" ? true : l.assignedTo===parseInt(memberFilter);
+    const mineOk = mineOnly ? l.assignedTo===currentUser.id : true;
     const searchOk = !search || (l.name||"").toLowerCase().includes(search.toLowerCase()) || (l.firm||"").toLowerCase().includes(search.toLowerCase());
-    return memberOk && searchOk;
+    return memberOk && mineOk && searchOk;
   });
   const filtFollowProjects = followUpProjects.filter(p => {
     const memberOk = memberFilter==="all" ? true : p.assignedTo?.includes(parseInt(memberFilter));
+    const mineOk = mineOnly ? p.assignedTo?.includes(currentUser.id) : true;
     const searchOk = !search || (p.client||"").toLowerCase().includes(search.toLowerCase());
-    return memberOk && searchOk;
+    return memberOk && mineOk && searchOk;
   });
 
   const SectionHeader = ({label, count, color}) => (
@@ -1703,7 +1827,10 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
         {/* Row 2: Search + status + member */}
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <SearchBar value={search} onChange={setSearch} placeholder="Search tasks, leads, projects…"/>
-          {[["all","All"],["mine","Mine"],["Pending","Pending"],["Done","Done"]].map(([f,label])=>(
+          <button onClick={()=>setMineOnly(m=>!m)} style={{background:mineOnly?"#533483":"#fff",color:mineOnly?"#fff":"#555",border:"1px solid #ddd",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:mineOnly?700:400}}>
+            👤 Mine
+          </button>
+          {[["all","All"],["Pending","Pending"],["Done","Done"]].map(([f,label])=>(
             <button key={f} onClick={()=>setStatusFilter(f)} style={{background:statusFilter===f?"#533483":"#fff",color:statusFilter===f?"#fff":"#555",border:"1px solid #ddd",borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
               {label}
             </button>
@@ -1860,14 +1987,342 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
   );
 }
 
-// ─── Team ─────────────────────────────────────────────────────────────────────
-function TeamTab({currentUser, passwords, onUpdatePassword}){
+// ─── Leave Management Section ──────────────────────────────────────────────────
+function LeaveManagementSection({currentUser, leaveRequests, leaveBalances, onSubmitLeave, onApproveLeave, onRejectLeave, onDismissNotification, onAdjustBalance, canApprove, isMohini, isDirector, canViewPayroll}){
+  const [showRequestForm, setShowRequestForm] = useState(false);
+  const [reqForm, setReqForm] = useState({fromDate:"", toDate:"", reason:""});
+  const [adjustingId, setAdjustingId] = useState(null);
+  const [adjustValue, setAdjustValue] = useState("");
+  const [rejectingId, setRejectingId] = useState(null);
+  const [calMonth, setCalMonth] = useState(() => { const d=new Date(); return {year:d.getFullYear(), month:d.getMonth()}; });
+  const [payrollMonth, setPayrollMonth] = useState(() => { const d=new Date(); return {year:d.getFullYear(), month:d.getMonth()}; });
+
+  const myBalance = leaveBalances[currentUser.id]?.balance ?? 0;
+  const myRequests = leaveRequests.filter(r=>r.memberId===currentUser.id).sort((a,b)=>b.requestedOn.localeCompare(a.requestedOn));
+  const pendingApprovals = leaveRequests.filter(r=>r.status==="Pending");
+  // One-time notification for the requester when their request was rejected
+  const myUnseenRejections = leaveRequests.filter(r=>r.memberId===currentUser.id && r.status==="Rejected" && !r.notified);
+
+  // ── Payroll: unpaid leave taken per employee, for the selected month ──
+  // Based on the leave's fromDate falling within the selected month/year.
+  const payrollMonthKey = `${payrollMonth.year}-${String(payrollMonth.month+1).padStart(2,"0")}`;
+  const payrollData = TEAM.filter(m=>m.role!=="director").map(m=>{
+    const approvedInMonth = leaveRequests.filter(r =>
+      r.memberId===m.id && r.status==="Approved" && r.fromDate && r.fromDate.startsWith(payrollMonthKey)
+    );
+    const totalUnpaid = approvedInMonth.reduce((sum,r)=>sum+(r.unpaidDays||0), 0);
+    const totalPaid = approvedInMonth.reduce((sum,r)=>sum+(r.paidDays??r.days??0), 0);
+    return { member: m, requests: approvedInMonth, totalPaid, totalUnpaid };
+  });
+  const payrollMonthName = new Date(payrollMonth.year, payrollMonth.month).toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+
+  const handleSubmit = () => {
+    if (!reqForm.fromDate || !reqForm.toDate) { alert("Please select both dates."); return; }
+    if (new Date(reqForm.toDate) < new Date(reqForm.fromDate)) { alert("End date cannot be before start date."); return; }
+    onSubmitLeave(currentUser.id, reqForm.fromDate, reqForm.toDate, reqForm.reason);
+    setReqForm({fromDate:"", toDate:"", reason:""});
+    setShowRequestForm(false);
+  };
+
+  const inputS = {border:"1px solid #ddd",borderRadius:6,padding:"7px 10px",fontSize:13,fontFamily:"inherit",width:"100%",boxSizing:"border-box"};
+
+  // ── Calendar helpers ──
+  const monthName = new Date(calMonth.year, calMonth.month).toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+  const firstDay = new Date(calMonth.year, calMonth.month, 1).getDay();
+  const daysInMonth = new Date(calMonth.year, calMonth.month+1, 0).getDate();
+  const approvedLeaves = leaveRequests.filter(r=>r.status==="Approved");
+  const dateHasLeave = (dateStr) => approvedLeaves.filter(r => dateStr>=r.fromDate && dateStr<=r.toDate);
+  const dateHoliday = (dateStr) => PUBLIC_HOLIDAYS_2026.find(h=>h.date===dateStr);
+  const pad2 = n => String(n).padStart(2,"0");
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+      {/* One-time rejection notification */}
+      {myUnseenRejections.map(r=>(
+        <div key={r.id} style={{background:"#fff5f5",border:"1px solid #c0392b44",borderRadius:8,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontSize:13,color:"#c0392b"}}>
+            ❌ Your leave request for <strong>{r.fromDate}</strong> to <strong>{r.toDate}</strong> ({r.days} day{r.days!==1?"s":""}) was not approved.
+          </div>
+          <button onClick={()=>onDismissNotification(r.id)} style={{background:"none",border:"1px solid #c0392b44",borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",color:"#c0392b",fontFamily:"inherit"}}>Dismiss</button>
+        </div>
+      ))}
+
+      {/* My balance + request button — hidden for director (Aman doesn't apply for leave) */}
+      {!isDirector && (
+        <div style={{background:"linear-gradient(135deg,#1a1a2e,#0f3460)",borderRadius:12,padding:"18px 22px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:"#c9a84c",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>My Leave Balance</div>
+            <div style={{fontSize:28,fontWeight:800,color:"#fff"}}>{myBalance} <span style={{fontSize:14,fontWeight:400,color:"#aaa"}}>day{myBalance!==1?"s":""}</span></div>
+            <div style={{fontSize:11,color:"#888",marginTop:2}}>Accrues 1.5 days on the 1st of every month · Capped at 8 days</div>
+          </div>
+          {!showRequestForm&&(
+            <button onClick={()=>setShowRequestForm(true)} style={{background:"#c9a84c",color:"#1a1a2e",border:"none",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Apply for Leave</button>
+          )}
+        </div>
+      )}
+
+      {/* Leave request form */}
+      {showRequestForm && !isDirector && (
+        <div style={{background:"#fff",borderRadius:10,padding:16,border:"1px solid #c9a84c55"}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>New Leave Request</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>FROM DATE *</div>
+              <input type="date" value={reqForm.fromDate} onChange={e=>setReqForm(f=>({...f,fromDate:e.target.value}))} style={inputS}/>
+            </div>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>TO DATE *</div>
+              <input type="date" value={reqForm.toDate} onChange={e=>setReqForm(f=>({...f,toDate:e.target.value}))} style={inputS}/>
+            </div>
+          </div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>REASON (OPTIONAL)</div>
+            <input value={reqForm.reason} onChange={e=>setReqForm(f=>({...f,reason:e.target.value}))} placeholder="e.g. Family function, personal work…" style={inputS}/>
+          </div>
+          {reqForm.fromDate && reqForm.toDate && new Date(reqForm.toDate)>=new Date(reqForm.fromDate) && (
+            <div style={{fontSize:12,color:"#555",marginBottom:12}}>
+              📅 {Math.round((new Date(reqForm.toDate)-new Date(reqForm.fromDate))/(1000*60*60*24))+1} day(s) requested · Balance after approval: {Math.max(0,myBalance-(Math.round((new Date(reqForm.toDate)-new Date(reqForm.fromDate))/(1000*60*60*24))+1))} day(s)
+            </div>
+          )}
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={handleSubmit} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 18px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Submit Request</button>
+            <button onClick={()=>{setShowRequestForm(false);setReqForm({fromDate:"",toDate:"",reason:""});}} style={{background:"none",border:"1px solid #ddd",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Approval queue — Aman & Mohini only */}
+      {canApprove && (
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>
+            Pending Approvals {pendingApprovals.length>0 && <span style={{background:"#c0392b",color:"#fff",borderRadius:10,padding:"1px 8px",fontSize:11,marginLeft:6}}>{pendingApprovals.length}</span>}
+          </div>
+          {pendingApprovals.length===0 && <div style={{background:"#fff",borderRadius:10,padding:16,color:"#aaa",fontSize:13}}>No pending leave requests.</div>}
+          {pendingApprovals.map(r=>{
+            const m = getMember(r.memberId, TEAM);
+            const bal = leaveBalances[r.memberId]?.balance ?? 0;
+            const insufficientBalance = bal < r.days;
+            const previewPaid = Math.min(bal, r.days);
+            const previewUnpaid = Math.max(0, r.days - bal);
+            return(
+              <div key={r.id} style={{background:"#fff",borderRadius:10,padding:"14px 16px",marginBottom:8,border:insufficientBalance?"1px solid #c0392b44":"1px solid #f0c94022",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                <Avatar member={m} size={36}/>
+                <div style={{flex:1,minWidth:180}}>
+                  <div style={{fontWeight:700,fontSize:14}}>{m?.name}</div>
+                  <div style={{fontSize:12,color:"#666",marginTop:2}}>{r.fromDate} → {r.toDate} · {r.days} day{r.days!==1?"s":""} · Balance: {bal}d</div>
+                  {r.reason&&<div style={{fontSize:12,color:"#888",marginTop:2,fontStyle:"italic"}}>"{r.reason}"</div>}
+                  {insufficientBalance&&(
+                    <div style={{fontSize:11,color:"#c0392b",marginTop:4,fontWeight:600}}>
+                      ⚠ {previewPaid}d paid + {previewUnpaid}d unpaid leave (insufficient balance)
+                    </div>
+                  )}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>onApproveLeave(r.id)} style={{background:"#2d6a4f",color:"#fff",border:"none",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>✓ Approve</button>
+                  <button onClick={()=>setRejectingId(r.id)} style={{background:"none",border:"1px solid #c0392b55",color:"#c0392b",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕ Reject</button>
+                </div>
+                {rejectingId===r.id&&(
+                  <div style={{width:"100%",marginTop:8,background:"#fff5f5",border:"1px solid #c0392b33",borderRadius:8,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:12,color:"#c0392b"}}>Reject {m?.name}'s leave request for {r.fromDate} → {r.toDate}?</span>
+                    <div style={{display:"flex",gap:6,flexShrink:0}}>
+                      <button onClick={()=>{onRejectLeave(r.id);setRejectingId(null);}} style={{background:"#c0392b",color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Yes, Reject</button>
+                      <button onClick={()=>setRejectingId(null)} style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Team balances — Mohini can adjust manually */}
+      {canApprove && (
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Team Leave Balances</div>
+          <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
+            {TEAM.filter(m=>m.role!=="director").map(m=>{
+              const bal = leaveBalances[m.id]?.balance ?? 0;
+              const isAdj = adjustingId===m.id;
+              return(
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px",borderBottom:"1px solid #f0f0f0"}}>
+                  <Avatar member={m} size={30}/>
+                  <div style={{flex:1,fontWeight:600,fontSize:13}}>{m.name}</div>
+                  {!isAdj ? (
+                    <>
+                      <span style={{fontWeight:700,fontSize:14,color:bal<=2?"#c0392b":"#2d6a4f"}}>{bal} day{bal!==1?"s":""}</span>
+                      {isMohini && <button onClick={()=>{setAdjustingId(m.id);setAdjustValue(String(bal));}} style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"3px 8px",fontSize:11,cursor:"pointer",color:"#555",fontFamily:"inherit"}}>✏️</button>}
+                    </>
+                  ):(
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <input type="number" step="0.5" value={adjustValue} onChange={e=>setAdjustValue(e.target.value)} style={{...inputS,width:70}}/>
+                      <button onClick={()=>{onAdjustBalance(m.id,parseFloat(adjustValue)||0);setAdjustingId(null);}} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
+                      <button onClick={()=>setAdjustingId(null)} style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Payroll — Unpaid Leave (Ram, Aman, Mohini only) */}
+      {canViewPayroll && (
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px"}}>💰 Payroll — Unpaid Leave</div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <button onClick={()=>setPayrollMonth(c=>c.month===0?{year:c.year-1,month:11}:{year:c.year,month:c.month-1})} style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"3px 9px",cursor:"pointer",fontSize:13}}>‹</button>
+              <span style={{fontSize:13,fontWeight:700,minWidth:130,textAlign:"center"}}>{payrollMonthName}</span>
+              <button onClick={()=>setPayrollMonth(c=>c.month===11?{year:c.year+1,month:0}:{year:c.year,month:c.month+1})} style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"3px 9px",cursor:"pointer",fontSize:13}}>›</button>
+            </div>
+          </div>
+          <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",padding:"8px 16px",background:"#f8f8f8",borderBottom:"1px solid #e8e8e8"}}>
+              <span style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase"}}>Employee</span>
+              <span style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",textAlign:"right"}}>Paid Days</span>
+              <span style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",textAlign:"right"}}>Unpaid Days</span>
+            </div>
+            {payrollData.map(({member, totalPaid, totalUnpaid})=>(
+              <div key={member.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",alignItems:"center",padding:"10px 16px",borderBottom:"1px solid #f0f0f0"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <Avatar member={member} size={26}/>
+                  <span style={{fontWeight:600,fontSize:13}}>{member.name}</span>
+                </div>
+                <span style={{textAlign:"right",fontSize:13,color:"#2d6a4f",fontWeight:600}}>{totalPaid>0?`${totalPaid}d`:"—"}</span>
+                <span style={{textAlign:"right",fontSize:13,fontWeight:700,color:totalUnpaid>0?"#c0392b":"#ccc"}}>{totalUnpaid>0?`${totalUnpaid}d`:"—"}</span>
+              </div>
+            ))}
+            {payrollData.every(d=>d.totalPaid===0 && d.totalUnpaid===0) && (
+              <div style={{padding:20,textAlign:"center",color:"#aaa",fontSize:13}}>No approved leave recorded for {payrollMonthName}.</div>
+            )}
+          </div>
+          <div style={{fontSize:11,color:"#888",marginTop:6}}>
+            Based on approved leave requests starting in the selected month. Unpaid days occur when a request exceeds the employee's available balance at approval time.
+          </div>
+        </div>
+      )}
+
+      {/* My leave history */}
+      {!isDirector && myRequests.length>0 && (
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>My Leave History</div>
+          <div style={{background:"#fff",borderRadius:10,overflow:"hidden"}}>
+            {myRequests.map(r=>(
+              <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px",borderBottom:"1px solid #f0f0f0"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:600}}>{r.fromDate} → {r.toDate}</div>
+                  <div style={{fontSize:11,color:"#888"}}>
+                    {r.days} day{r.days!==1?"s":""}
+                    {r.status==="Approved" && r.unpaidDays>0 && (
+                      <span style={{color:"#c0392b",fontWeight:600}}> ({r.paidDays}d paid + {r.unpaidDays}d unpaid)</span>
+                    )}
+                    {r.reason?` · ${r.reason}`:""}
+                  </div>
+                </div>
+                <Badge label={r.status} color={r.status==="Approved"?"#2d6a4f":r.status==="Rejected"?"#c0392b":"#c9a84c"}/>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Calendar view */}
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px"}}>Leave Calendar</div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={()=>setCalMonth(c=>c.month===0?{year:c.year-1,month:11}:{year:c.year,month:c.month-1})} style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"3px 9px",cursor:"pointer",fontSize:13}}>‹</button>
+            <span style={{fontSize:13,fontWeight:700,minWidth:130,textAlign:"center"}}>{monthName}</span>
+            <button onClick={()=>setCalMonth(c=>c.month===11?{year:c.year+1,month:0}:{year:c.year,month:c.month+1})} style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"3px 9px",cursor:"pointer",fontSize:13}}>›</button>
+          </div>
+        </div>
+        <div style={{background:"#fff",borderRadius:10,padding:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:6}}>
+            {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
+              <div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase"}}>{d}</div>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+            {Array.from({length:firstDay}).map((_,i)=><div key={`empty${i}`}/>)}
+            {Array.from({length:daysInMonth}).map((_,i)=>{
+              const day = i+1;
+              const dateStr = `${calMonth.year}-${pad2(calMonth.month+1)}-${pad2(day)}`;
+              const leavesToday = dateHasLeave(dateStr);
+              const holiday = dateHoliday(dateStr);
+              const isToday = dateStr === today();
+              return(
+                <div key={day} style={{minHeight:54,border:`1px solid ${isToday?"#c9a84c":"#f0f0f0"}`,borderRadius:6,padding:"4px 5px",background:holiday?"#fff8e7":leavesToday.length>0?"#f0f4ff":"#fff",position:"relative"}}>
+                  <div style={{fontSize:11,fontWeight:isToday?800:600,color:isToday?"#c9a84c":"#333"}}>{day}</div>
+                  {holiday&&<div style={{fontSize:8,color:"#c9a84c",fontWeight:700,marginTop:2,lineHeight:1.2}}>🎉 {holiday.name}</div>}
+                  {leavesToday.slice(0,2).map(r=>{
+                    const m=getMember(r.memberId,TEAM);
+                    return <div key={r.id} style={{fontSize:8,color:"#0f3460",marginTop:1,lineHeight:1.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>🏖 {m?.name}</div>;
+                  })}
+                  {leavesToday.length>2&&<div style={{fontSize:8,color:"#888"}}>+{leavesToday.length-2} more</div>}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",gap:14,marginTop:12,fontSize:11,color:"#888"}}>
+            <span>🎉 Public Holiday</span>
+            <span>🏖 On Leave</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PUBLIC_HOLIDAYS_2026 = [
+  {date:"2026-01-01", name:"New Year's Day"},
+  {date:"2026-01-26", name:"Republic Day"},
+  {date:"2026-03-04", name:"Holi"},
+  {date:"2026-03-21", name:"Id-ul-Fitr (Eid)"},
+  {date:"2026-04-03", name:"Good Friday"},
+  {date:"2026-08-09", name:"Raksha Bandhan"},
+  {date:"2026-08-15", name:"Independence Day"},
+  {date:"2026-09-04", name:"Janmashtami"},
+  {date:"2026-10-02", name:"Gandhi Jayanti"},
+  {date:"2026-10-20", name:"Dussehra (Vijaya Dashami)"},
+  {date:"2026-11-08", name:"Diwali"},
+  {date:"2026-12-25", name:"Christmas Day"},
+];
+
+function TeamTab({currentUser, passwords, onUpdatePassword, leaveRequests=[], leaveBalances={}, onSubmitLeave, onApproveLeave, onRejectLeave, onDismissNotification, onAdjustBalance}){
+  const [subTab, setSubTab] = useState("leave"); // "leave" | "passwords"
+  const isMohini = currentUser.role === "operations";
+  const canApprove = currentUser.role === "operations" || currentUser.role === "director";
+  const isDirector = currentUser.role === "director";
+  // Payroll visibility: Ram (accounts), Aman (director), Mohini (operations)
+  const canViewPayroll = currentUser.role === "accounts" || currentUser.role === "director" || currentUser.role === "operations";
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"flex",gap:6}}>
+        <button onClick={()=>setSubTab("leave")} style={{background:subTab==="leave"?"#1a1a2e":"#fff",color:subTab==="leave"?"#fff":"#555",border:"1px solid #ddd",borderRadius:7,padding:"7px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>🗓 Leave Management</button>
+        <button onClick={()=>setSubTab("passwords")} style={{background:subTab==="passwords"?"#1a1a2e":"#fff",color:subTab==="passwords"?"#fff":"#555",border:"1px solid #ddd",borderRadius:7,padding:"7px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>🔑 Passwords</button>
+      </div>
+      {subTab==="leave"
+        ? <LeaveManagementSection currentUser={currentUser} leaveRequests={leaveRequests} leaveBalances={leaveBalances}
+            onSubmitLeave={onSubmitLeave} onApproveLeave={onApproveLeave} onRejectLeave={onRejectLeave}
+            onDismissNotification={onDismissNotification} onAdjustBalance={onAdjustBalance}
+            canApprove={canApprove} isMohini={isMohini} isDirector={isDirector} canViewPayroll={canViewPayroll}/>
+        : <PasswordsSection currentUser={currentUser} passwords={passwords} onUpdatePassword={onUpdatePassword} isMohini={isMohini}/>
+      }
+    </div>
+  );
+}
+
+// ─── Passwords sub-section (original TeamTab content, unchanged behaviour) ────
+function PasswordsSection({currentUser, passwords, onUpdatePassword, isMohini}){
   const [changingId, setChangingId] = useState(null);
   const [newPwd, setNewPwd] = useState("");
   const [confirmPwd, setConfirmPwd] = useState("");
   const [showPwd, setShowPwd] = useState({});
   const [saved, setSaved] = useState(null);
-  const isMohini = currentUser.role === "operations";
 
   const handleSave = (memberId) => {
     if (newPwd.length < 6) { alert("Password must be at least 6 characters."); return; }
@@ -1890,12 +2345,11 @@ function TeamTab({currentUser, passwords, onUpdatePassword}){
       {TEAM.map(m=>{
         const isChanging = changingId === m.id;
         const isSelf = currentUser.id === m.id;
-        const canChange = isMohini || isSelf; // Mohini can change all, others only own
+        const canChange = isMohini || isSelf;
         const currentPwd = (passwords||DEFAULT_PASSWORDS)[m.id];
 
         return(
           <div key={m.id} style={{background:"#fff",borderRadius:10,padding:"14px 16px",border:isChanging?"1px solid #c9a84c55":"1px solid #f0f0f0"}}>
-            {/* Member row */}
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <Avatar member={m} size={36}/>
               <div style={{flex:1}}>
@@ -1911,8 +2365,6 @@ function TeamTab({currentUser, passwords, onUpdatePassword}){
                 </button>
               )}
             </div>
-
-            {/* Password display — Mohini only */}
             {isMohini && !isChanging && (
               <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
                 <span style={{fontSize:11,color:"#888",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px"}}>Password:</span>
@@ -1925,8 +2377,6 @@ function TeamTab({currentUser, passwords, onUpdatePassword}){
                 </button>
               </div>
             )}
-
-            {/* Change password form */}
             {isChanging && (
               <div style={{marginTop:12,padding:"12px 14px",background:"#f8f8f8",borderRadius:8,display:"flex",flexDirection:"column",gap:8}}>
                 <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:2}}>
