@@ -30,7 +30,7 @@ const fromRows = (rows) => rows.map(r => { try { return JSON.parse(r[1]); } catc
 const DEFAULT_PASSWORDS = {
   1: "Lx#9mK2w", 2: "Qr$7vN4p", 3: "Tz!3bJ8s", 4: "Wc@6hY1n",
   5: "Pk&5dF3e", 6: "Ry#2xM7q", 7: "Hs!8kL4z", 8: "Nb$1wC9j",
-  9: "Gf@4tR6u", 10: "Vm&7aE2i", 11: "Jd#5nB0y"
+  9: "Gf@4tR6u", 10: "Vm&7aE2i", 11: "Jd#5nB0y", 12: "Py#3kX5m"
 };
 // Load saved passwords from localStorage (persists across sessions)
 const loadPasswords = () => {
@@ -43,20 +43,45 @@ const savePasswords = (pwds) => {
   try { localStorage.setItem("crm_passwords", JSON.stringify(pwds)); } catch {}
 };
 
-// ─── Static team (not stored in sheets — passwords kept local) ────────────────
-const TEAM = [
-  { id: 1,  name: "Aman",    designation: "Director",                  role: "director",    initials: "AM", color: "#1a1a2e" },
-  { id: 2,  name: "Mohini",  designation: "Operations",                role: "operations",  initials: "MO", color: "#16213e" },
+// ─── Team — base list + dynamic additions stored in localStorage ─────────────
+const BASE_TEAM = [
+  { id: 1,  name: "Aman",    designation: "Director",                  role: "director",    initials: "AM", color: "#1a1a2e", core: true },
+  { id: 2,  name: "Mohini",  designation: "Operations",                role: "operations",  initials: "MO", color: "#16213e", core: true },
   { id: 3,  name: "Ajay",    designation: "Project Coordinator",       role: "coordinator", initials: "AJ", color: "#0f3460" },
   { id: 4,  name: "Aatray",  designation: "Sales",                     role: "sales",       initials: "AA", color: "#533483" },
   { id: 5,  name: "Ram",     designation: "Accounts",                  role: "accounts",    initials: "RA", color: "#2d6a4f" },
   { id: 6,  name: "Chaitra", designation: "Design Team",               role: "design",      initials: "CH", color: "#b5446e" },
   { id: 7,  name: "Manisha", designation: "Design Team",               role: "design",      initials: "MA", color: "#c17c74" },
-  { id: 8,  name: "Surya", designation: "Design Team",               role: "design",      initials: "SU", color: "#8b5e3c" },
+  { id: 8,  name: "Surya",   designation: "Design Team",               role: "design",      initials: "SU", color: "#8b5e3c" },
   { id: 9,  name: "Rahul",   designation: "Design Team",               role: "design",      initials: "RH", color: "#4a7c59" },
   { id: 10, name: "Tarana",  designation: "Design Team",               role: "design",      initials: "TA", color: "#7b6d8d" },
   { id: 11, name: "Shivam",  designation: "Admin & Asset Management",  role: "admin",       initials: "SV", color: "#3d5a80" },
+  { id: 12, name: "Piyush",  designation: "Design Team",               role: "design",      initials: "PI", color: "#2e86ab" },
 ];
+
+// Team member colours for new additions
+const MEMBER_COLORS = ["#1a1a2e","#533483","#2d6a4f","#b5446e","#0f3460","#c17c74","#8b5e3c","#4a7c59","#7b6d8d","#3d5a80","#2e86ab","#e07a5f","#3d405b","#81b29a"];
+
+const loadTeam = () => {
+  try {
+    const extra = localStorage.getItem("crm_extra_members");
+    const removed = JSON.parse(localStorage.getItem("crm_removed_members")||"[]");
+    const base = BASE_TEAM.filter(m => !removed.includes(m.id));
+    if (!extra) return base;
+    return [...base, ...JSON.parse(extra)];
+  } catch { return [...BASE_TEAM]; }
+};
+
+const saveTeamAdditions = (extra) => {
+  try { localStorage.setItem("crm_extra_members", JSON.stringify(extra)); } catch {}
+};
+const saveRemovedIds = (ids) => {
+  try { localStorage.setItem("crm_removed_members", JSON.stringify(ids)); } catch {}
+};
+
+// TEAM is the live list — rebuilt from loadTeam() on app start
+// Components reference TEAM directly; Mohini's actions update localStorage and trigger a re-render
+let TEAM = loadTeam();
 
 const STAGES = [
   "Lead","Meeting Done","Design Started","Mockup Awaited","Mockup Done","Response Awaited",
@@ -2323,6 +2348,48 @@ function PasswordsSection({currentUser, passwords, onUpdatePassword, isMohini}){
   const [confirmPwd, setConfirmPwd] = useState("");
   const [showPwd, setShowPwd] = useState({});
   const [saved, setSaved] = useState(null);
+  // Manage team — Mohini only
+  const [teamList, setTeamList] = useState(() => loadTeam());
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newMember, setNewMember] = useState({name:"", designation:"Design Team", role:"design"});
+  const [addError, setAddError] = useState("");
+  const [removingId, setRemovingId] = useState(null);
+
+  const handleAddMember = () => {
+    if (!newMember.name.trim()) { setAddError("Name is required."); return; }
+    const existing = teamList.find(m => m.name.toLowerCase() === newMember.name.trim().toLowerCase());
+    if (existing) { setAddError("A team member with this name already exists."); return; }
+    const maxId = Math.max(...teamList.map(m=>m.id), 12);
+    const initials = newMember.name.trim().split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+    const color = MEMBER_COLORS[teamList.length % MEMBER_COLORS.length];
+    const entry = { id: maxId+1, name: newMember.name.trim(), designation: newMember.designation, role: newMember.role, initials, color };
+    // Default password for new member
+    const defaultPwd = "Light" + Math.floor(1000+Math.random()*9000);
+    onUpdatePassword(entry.id, defaultPwd);
+    // Persist extra member
+    const current = (() => { try { return JSON.parse(localStorage.getItem("crm_extra_members")||"[]"); } catch { return []; } })();
+    saveTeamAdditions([...current, entry]);
+    TEAM = loadTeam();
+    setTeamList(loadTeam());
+    setNewMember({name:"", designation:"Design Team", role:"design"});
+    setShowAddForm(false);
+    setAddError("");
+    alert(`${entry.name} added! Default password: ${defaultPwd}
+Please share this with them and ask them to change it.`);
+  };
+
+  const handleRemoveMember = (memberId) => {
+    const removed = (() => { try { return JSON.parse(localStorage.getItem("crm_removed_members")||"[]"); } catch { return []; } })();
+    // If it's a base member, add to removed list
+    const isBase = BASE_TEAM.find(m=>m.id===memberId);
+    if (isBase) saveRemovedIds([...removed, memberId]);
+    // If it's an extra member, remove from extras list
+    const extras = (() => { try { return JSON.parse(localStorage.getItem("crm_extra_members")||"[]"); } catch { return []; } })();
+    saveTeamAdditions(extras.filter(m=>m.id!==memberId));
+    TEAM = loadTeam();
+    setTeamList(loadTeam());
+    setRemovingId(null);
+  };
 
   const handleSave = (memberId) => {
     if (newPwd.length < 6) { alert("Password must be at least 6 characters."); return; }
@@ -2364,12 +2431,29 @@ function PasswordsSection({currentUser, passwords, onUpdatePassword, isMohini}){
                   🔑 Change
                 </button>
               )}
+              {/* Remove button — Mohini only, not for core members */}
+              {isMohini && !m.core && !isChanging && removingId!==m.id && (
+                <button onClick={()=>setRemovingId(m.id)}
+                  style={{background:"none",border:"1px solid #e0e0e0",borderRadius:5,padding:"4px 8px",fontSize:11,cursor:"pointer",color:"#c0392b",fontFamily:"inherit"}}>
+                  🗑
+                </button>
+              )}
             </div>
+            {/* Remove confirmation */}
+            {isMohini && removingId===m.id && (
+              <div style={{marginTop:10,background:"#fff5f5",border:"1px solid #c0392b33",borderRadius:8,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                <span style={{fontSize:12,color:"#c0392b"}}>Remove {m.name} from the team? This cannot be undone.</span>
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button onClick={()=>handleRemoveMember(m.id)} style={{background:"#c0392b",color:"#fff",border:"none",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Yes, Remove</button>
+                  <button onClick={()=>setRemovingId(null)} style={{background:"none",border:"1px solid #ddd",borderRadius:5,padding:"5px 12px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                </div>
+              </div>
+            )}
             {isMohini && !isChanging && (
               <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
                 <span style={{fontSize:11,color:"#888",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px"}}>Password:</span>
                 <span style={{fontFamily:"monospace",fontSize:13,color:"#555",letterSpacing:"1px",flex:1}}>
-                  {showPwd[m.id] ? currentPwd : "•".repeat(currentPwd.length)}
+                  {showPwd[m.id] ? currentPwd : "•".repeat((currentPwd||"").length)}
                 </span>
                 <button onClick={()=>setShowPwd(p=>({...p,[m.id]:!p[m.id]}))}
                   style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:"2px 4px"}}>
@@ -2412,6 +2496,56 @@ function PasswordsSection({currentUser, passwords, onUpdatePassword, isMohini}){
           </div>
         );
       })}
+
+      {/* Add New Team Member — Mohini only */}
+      {isMohini && (
+        <div style={{marginTop:4}}>
+          {!showAddForm ? (
+            <button onClick={()=>setShowAddForm(true)}
+              style={{width:"100%",background:"#fff",border:"2px dashed #ddd",borderRadius:10,padding:"12px",fontSize:13,cursor:"pointer",fontFamily:"inherit",color:"#555",fontWeight:600}}>
+              + Add New Team Member
+            </button>
+          ) : (
+            <div style={{background:"#fff",borderRadius:10,padding:"16px",border:"1px solid #c9a84c55"}}>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:12,color:"#1a1a2e"}}>Add New Team Member</div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>FULL NAME *</div>
+                  <input value={newMember.name} onChange={e=>{setNewMember(f=>({...f,name:e.target.value}));setAddError("");}}
+                    placeholder="e.g. Priya Sharma" style={inputS}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>DESIGNATION</div>
+                  <input value={newMember.designation} onChange={e=>setNewMember(f=>({...f,designation:e.target.value}))}
+                    placeholder="e.g. Design Team" style={inputS}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4}}>ROLE</div>
+                  <select value={newMember.role} onChange={e=>setNewMember(f=>({...f,role:e.target.value}))} style={inputS}>
+                    <option value="design">Design Team</option>
+                    <option value="coordinator">Project Coordinator</option>
+                    <option value="sales">Sales</option>
+                    <option value="accounts">Accounts</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                {addError&&<div style={{fontSize:12,color:"#c0392b"}}>⚠ {addError}</div>}
+                <div style={{fontSize:11,color:"#888"}}>A default password will be generated automatically. Share it with the new member and ask them to change it on first login.</div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={handleAddMember}
+                    style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 18px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,flex:1}}>
+                    Add Member
+                  </button>
+                  <button onClick={()=>{setShowAddForm(false);setNewMember({name:"",designation:"Design Team",role:"design"});setAddError("");}}
+                    style={{background:"none",border:"1px solid #ddd",borderRadius:7,padding:"8px 14px",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
