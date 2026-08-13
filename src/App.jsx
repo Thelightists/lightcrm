@@ -69,7 +69,13 @@ const loadTeam = () => {
     const removed = JSON.parse(localStorage.getItem("crm_removed_members")||"[]");
     const base = BASE_TEAM.filter(m => !removed.includes(m.id));
     if (!extra) return base;
-    return [...base, ...JSON.parse(extra)];
+    const baseNames = new Set(BASE_TEAM.map(m => m.name.trim().toLowerCase()));
+    const extras = JSON.parse(extra).filter(m => !baseNames.has((m.name||"").trim().toLowerCase()));
+    // Persist the cleaned list back so duplicates don't reappear
+    if (extras.length !== JSON.parse(extra).length) {
+      try { localStorage.setItem("crm_extra_members", JSON.stringify(extras)); } catch {}
+    }
+    return [...base, ...extras];
   } catch { return [...BASE_TEAM]; }
 };
 
