@@ -729,6 +729,12 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
     t.assignedTo === currentUser.id && t.status !== "Done" &&
     (isOverdue(t.dueDate) || t.dueDate === today())
   );
+  const myProjectFollowups = projects.filter(p => {
+    if (!p.followUpDate || p.stage === "Closed") return false;
+    const assigned = p.assignedTo?.includes(currentUser.id);
+    const due = p.followUpDate <= today();
+    return assigned && due;
+  });
   const myLeadFollowups = leads.filter(l => {
     if (!l.followUpDate) return false;
     const assigned = l.assignedTo === currentUser.id;
@@ -737,7 +743,7 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
     return assigned && due && !dead;
   });
 
-  const totalBriefing = myTasks.length + myLeadFollowups.length;
+  const totalBriefing = myTasks.length + myProjectFollowups.length + myLeadFollowups.length;
   const greetHour = new Date().getHours();
   const greeting = greetHour < 12 ? "Good morning" : greetHour < 17 ? "Good afternoon" : "Good evening";
 
@@ -764,7 +770,10 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
                 <div style={{fontSize:20,fontWeight:800,color:"#e74c3c"}}>{myTasks.length}</div>
                 <div style={{fontSize:10,color:"#aaa",marginTop:1}}>Tasks due</div>
               </div>}
-
+              {myProjectFollowups.length>0&&<div style={{background:"#c9a84c22",border:"1px solid #c9a84c55",borderRadius:8,padding:"8px 12px",textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:800,color:"#c9a84c"}}>{myProjectFollowups.length}</div>
+                <div style={{fontSize:10,color:"#aaa",marginTop:1}}>Project follow-ups</div>
+              </div>}
               {myLeadFollowups.length>0&&<div style={{background:"#53348322",border:"1px solid #53348355",borderRadius:8,padding:"8px 12px",textAlign:"center"}}>
                 <div style={{fontSize:20,fontWeight:800,color:"#9b59b6"}}>{myLeadFollowups.length}</div>
                 <div style={{fontSize:10,color:"#aaa",marginTop:1}}>Lead follow-ups</div>
