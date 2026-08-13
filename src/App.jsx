@@ -57,6 +57,7 @@ const BASE_TEAM = [
   { id: 10, name: "Tarana",  designation: "Design Team",               role: "design",      initials: "TA", color: "#7b6d8d" },
   { id: 11, name: "Shivam",  designation: "Admin & Asset Management",  role: "admin",       initials: "SV", color: "#3d5a80" },
   { id: 12, name: "Piyush",  designation: "Design Team",               role: "design",      initials: "PI", color: "#2e86ab" },
+  { id: 13, name: "Ar. Chaitrali Jagdale", designation: "Lighting Designer", role: "design", initials: "AC", color: "#e07a5f" },
 ];
 
 // Team member colours for new additions
