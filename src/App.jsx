@@ -30,7 +30,8 @@ const fromRows = (rows) => rows.map(r => { try { return JSON.parse(r[1]); } catc
 const DEFAULT_PASSWORDS = {
   1: "Lx#9mK2w", 2: "Qr$7vN4p", 3: "Tz!3bJ8s", 4: "Wc@6hY1n",
   5: "Pk&5dF3e", 6: "Ry#2xM7q", 7: "Hs!8kL4z", 8: "Nb$1wC9j",
-  9: "Gf@4tR6u", 10: "Vm&7aE2i", 11: "Jd#5nB0y", 12: "Py#3kX5m"
+  9: "Gf@4tR6u", 10: "Vm&7aE2i", 11: "Jd#5nB0y", 12: "Py#3kX5m",
+  13: "Ac@7tL9x"
 };
 // Load saved passwords from localStorage (persists across sessions)
 const loadPasswords = () => {
@@ -2307,18 +2308,19 @@ function LeaveManagementSection({currentUser, leaveRequests, leaveBalances, onSu
 }
 
 const PUBLIC_HOLIDAYS_2026 = [
-  {date:"2026-01-01", name:"New Year's Day"},
-  {date:"2026-01-26", name:"Republic Day"},
-  {date:"2026-03-04", name:"Holi"},
-  {date:"2026-03-21", name:"Id-ul-Fitr (Eid)"},
-  {date:"2026-04-03", name:"Good Friday"},
-  {date:"2026-08-09", name:"Raksha Bandhan"},
-  {date:"2026-08-15", name:"Independence Day"},
-  {date:"2026-09-04", name:"Janmashtami"},
-  {date:"2026-10-02", name:"Gandhi Jayanti"},
-  {date:"2026-10-20", name:"Dussehra (Vijaya Dashami)"},
-  {date:"2026-11-08", name:"Diwali"},
-  {date:"2026-12-25", name:"Christmas Day"},
+  {date:"2026-01-01", name:"New Year's Day (Thursday)"},
+  {date:"2026-01-26", name:"Republic Day (Monday)"},
+  {date:"2026-03-04", name:"Holi (Wednesday)"},
+  {date:"2026-03-21", name:"Id-ul-Fitr / Eid (Saturday)"},
+  {date:"2026-04-03", name:"Good Friday (Friday)"},
+  {date:"2026-08-15", name:"Independence Day (Saturday)"},
+  {date:"2026-08-28", name:"Raksha Bandhan (Friday)"},
+  {date:"2026-09-04", name:"Janmashtami (Friday)"},
+  {date:"2026-10-02", name:"Gandhi Jayanti (Friday)"},
+  {date:"2026-10-20", name:"Dussehra / Vijaya Dashami (Tuesday)"},
+  {date:"2026-11-07", name:"Diwali Eve / Chhoti Diwali (Saturday)"},
+  {date:"2026-11-08", name:"Diwali (Sunday)"},
+  {date:"2026-12-25", name:"Christmas Day (Friday)"},
 ];
 
 function TeamTab({currentUser, passwords, onUpdatePassword, leaveRequests=[], leaveBalances={}, onSubmitLeave, onApproveLeave, onRejectLeave, onDismissNotification, onAdjustBalance}){
