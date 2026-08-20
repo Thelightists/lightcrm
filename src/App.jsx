@@ -31,7 +31,7 @@ const DEFAULT_PASSWORDS = {
   1: "Lx#9mK2w", 2: "Qr$7vN4p", 3: "Tz!3bJ8s", 4: "Wc@6hY1n",
   5: "Pk&5dF3e", 6: "Ry#2xM7q", 7: "Hs!8kL4z", 8: "Nb$1wC9j",
   9: "Gf@4tR6u", 10: "Vm&7aE2i", 11: "Jd#5nB0y", 12: "Py#3kX5m",
-  13: "Ac@7tL9x"
+  13: "Light4321"
 };
 // Load saved passwords from localStorage (persists across sessions)
 const loadPasswords = () => {
@@ -449,17 +449,23 @@ export default function LightCRM() {
 
   // One-time bootstrap: if LeaveBalances sheet is completely empty (first ever run),
   // initialise every non-director team member at 0 balance for the current month.
+  // Also initialises any new team members not yet in the balance sheet.
   useEffect(() => {
     if (loading) return;
-    if (Object.keys(leaveBalances).length > 0) return; // already has data, don't overwrite
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-    const init = {};
+    const isFullyEmpty = Object.keys(leaveBalances).length === 0;
+    const init = { ...leaveBalances };
+    let changed = false;
     TEAM.forEach(m => {
       if (m.role === "director") return;
-      init[m.id] = { id: m.id, balance: ACCRUAL_PER_MONTH, lastAccrualMonth: currentMonthKey };
+      if (!init[m.id]) {
+        // Either first ever run, or a new team member not yet in the sheet
+        init[m.id] = { id: m.id, balance: isFullyEmpty ? ACCRUAL_PER_MONTH : 0, lastAccrualMonth: currentMonthKey };
+        changed = true;
+      }
     });
-    if (Object.keys(init).length > 0) setLeaveBalances(init);
+    if (changed) setLeaveBalances(init);
   }, [loading]);
 
   // ── Leave request handlers ──
