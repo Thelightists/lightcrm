@@ -37,7 +37,11 @@ const DEFAULT_PASSWORDS = {
 const loadPasswords = () => {
   try {
     const saved = localStorage.getItem("crm_passwords");
-    return saved ? {...DEFAULT_PASSWORDS, ...JSON.parse(saved)} : {...DEFAULT_PASSWORDS};
+    const parsed = saved ? JSON.parse(saved) : {};
+    // Always reset id 13 to DEFAULT to clear any stale cached password
+    delete parsed[13];
+    if (saved) localStorage.setItem("crm_passwords", JSON.stringify(parsed));
+    return {...DEFAULT_PASSWORDS, ...parsed};
   } catch { return {...DEFAULT_PASSWORDS}; }
 };
 const savePasswords = (pwds) => {
