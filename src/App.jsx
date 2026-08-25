@@ -772,12 +772,7 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
     t.assignedTo === currentUser.id && t.status !== "Done" &&
     (isOverdue(t.dueDate) || t.dueDate === today())
   );
-  const myProjectFollowups = projects.filter(p => {
-    if (!p.followUpDate || p.stage === "Closed") return false;
-    const assigned = p.assignedTo?.includes(currentUser.id);
-    const due = p.followUpDate <= today();
-    return assigned && due;
-  });
+
   const myLeadFollowups = leads.filter(l => {
     if (!l.followUpDate) return false;
     const assigned = l.assignedTo === currentUser.id;
@@ -786,7 +781,7 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
     return assigned && due && !dead;
   });
 
-  const totalBriefing = myTasks.length + myProjectFollowups.length + myLeadFollowups.length;
+  const totalBriefing = myTasks.length + myLeadFollowups.length;
   const greetHour = new Date().getHours();
   const greeting = greetHour < 12 ? "Good morning" : greetHour < 17 ? "Good afternoon" : "Good evening";
 
@@ -813,10 +808,7 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
                 <div style={{fontSize:20,fontWeight:800,color:"#e74c3c"}}>{myTasks.length}</div>
                 <div style={{fontSize:10,color:"#aaa",marginTop:1}}>Tasks due</div>
               </div>}
-              {myProjectFollowups.length>0&&<div style={{background:"#c9a84c22",border:"1px solid #c9a84c55",borderRadius:8,padding:"8px 12px",textAlign:"center"}}>
-                <div style={{fontSize:20,fontWeight:800,color:"#c9a84c"}}>{myProjectFollowups.length}</div>
-                <div style={{fontSize:10,color:"#aaa",marginTop:1}}>Project follow-ups</div>
-              </div>}
+
               {myLeadFollowups.length>0&&<div style={{background:"#53348322",border:"1px solid #53348355",borderRadius:8,padding:"8px 12px",textAlign:"center"}}>
                 <div style={{fontSize:20,fontWeight:800,color:"#9b59b6"}}>{myLeadFollowups.length}</div>
                 <div style={{fontSize:10,color:"#aaa",marginTop:1}}>Lead follow-ups</div>
@@ -857,26 +849,6 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
         </div>
       )}
 
-      {/* ── Project follow-ups due ────────────────────────────────────────── */}
-      {myProjectFollowups.length > 0 && (
-        <div style={{background:"#fff",borderRadius:10,padding:isMobile?14:16,border:"2px solid #c9a84c33"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{fontWeight:700,fontSize:13,color:"#c9a84c"}}>🟡 Project Follow-Ups Due</div>
-            <button onClick={()=>setTab("projects")} style={{background:"none",border:"none",color:"#c9a84c",cursor:"pointer",fontSize:12,fontWeight:600}}>View all →</button>
-          </div>
-          {myProjectFollowups.map(p=>(
-            <div key={p.id} onClick={()=>setDrawerProject(p.id)}
-              style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f0f0f0",cursor:"pointer"}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#1a1a2e",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.client}</div>
-                <div style={{fontSize:11,color:"#888",marginTop:1}}>{p.stage} · Follow-up: {p.followUpDate}</div>
-              </div>
-              <StageIndex stage={p.stage}/>
-              <span style={{color:"#c9a84c",fontSize:12}}>→</span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* ── Lead follow-ups due ───────────────────────────────────────────── */}
       {myLeadFollowups.length > 0 && (
