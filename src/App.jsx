@@ -1803,11 +1803,6 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
   const tomorrow = () => { const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().split("T")[0]; };
   const daysDiff2 = (date) => { const diff=(new Date(date)-new Date(today()))/(1000*60*60*24); return Math.round(diff); };
 
-  // Projects that need follow-up attention
-  const followUpProjects = projects.filter(p => {
-    if (!p.followUpDate || p.stage === "Closed") return false;
-    return daysDiff2(p.followUpDate) <= 1;
-  });
   // Leads that need follow-up — exclude dead leads
   const followUpLeads = leads.filter(l => {
     if (!l.followUpDate) return false;
@@ -1833,12 +1828,6 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
     const searchOk = !search || (l.name||"").toLowerCase().includes(search.toLowerCase()) || (l.firm||"").toLowerCase().includes(search.toLowerCase());
     return memberOk && mineOk && searchOk;
   });
-  const filtFollowProjects = followUpProjects.filter(p => {
-    const memberOk = memberFilter==="all" ? true : p.assignedTo?.includes(parseInt(memberFilter));
-    const mineOk = mineOnly ? p.assignedTo?.includes(currentUser.id) : true;
-    const searchOk = !search || (p.client||"").toLowerCase().includes(search.toLowerCase());
-    return memberOk && mineOk && searchOk;
-  });
 
   const SectionHeader = ({label, count, color}) => (
     <div style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0 6px"}}>
@@ -1854,7 +1843,7 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
         {/* Row 1: Section filter + New Task */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {[["all","All Sections"],["leads","Lead Follow-ups"],["projects","Project Follow-ups"],["tasks","Tasks Only"]].map(([f,label])=>(
+            {[["all","All Sections"],["leads","Lead Follow-ups"],["tasks","Tasks Only"]].map(([f,label])=>(
               <button key={f} onClick={()=>setSectionFilter(f)} style={{background:sectionFilter===f?"#1a1a2e":"#fff",color:sectionFilter===f?"#fff":"#555",border:"1px solid #ddd",borderRadius:6,padding:"5px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:sectionFilter===f?700:400}}>
                 {label}
               </button>
@@ -1907,36 +1896,6 @@ function TasksTab({tasks,projects,leads=[],currentUser,setTasks,setModal,setDraw
         </div>
       </>}
 
-      {/* Auto-populated: Project follow-ups */}
-      {(sectionFilter==="all"||sectionFilter==="projects") && filtFollowProjects.length>0 && <>
-        <SectionHeader label="Project Follow-ups Due" count={filtFollowProjects.length} color="#c0392b"/>
-        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
-          {filtFollowProjects.map(p=>{
-            const diff=daysDiff2(p.followUpDate);
-            const isToday=diff===0;
-            const isTomorrow=diff===1;
-            const isPast=diff<0;
-            const members=p.assignedTo.map(id=>getMember(id,TEAM)).filter(Boolean);
-            const bgColor=isPast?"#fff5f5":isToday?"#fff8e7":"#f0faf4";
-            const borderColor=isPast?"#e74c3c":isToday?"#c9a84c":"#2d6a4f";
-            const label=isPast?`🔴 Overdue by ${Math.abs(diff)} day${Math.abs(diff)>1?"s":""}`:isToday?"🟡 Due today":"🟢 Due tomorrow";
-            return(
-              <div key={p.id} onClick={()=>setDrawerProject(p.id)}
-                style={{background:bgColor,border:`1px solid ${borderColor}44`,borderLeft:`4px solid ${borderColor}`,borderRadius:8,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}
-                onMouseEnter={e=>e.currentTarget.style.opacity="0.85"}
-                onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:13}}>{p.client}</div>
-                  <div style={{fontSize:11,color:"#666",marginTop:2}}>{p.stage} · Follow-up: {p.followUpDate}</div>
-                </div>
-                <span style={{fontSize:11,fontWeight:700,color:borderColor}}>{label}</span>
-                <div style={{display:"flex",gap:3}}>{members.map(m=><Avatar key={m.id} member={m} size={22}/>)}</div>
-                <span style={{color:"#c9a84c",fontSize:11}}>Open →</span>
-              </div>
-            );
-          })}
-        </div>
-      </>}
 
       {/* Manual tasks */}
       {(sectionFilter==="all"||sectionFilter==="tasks") && <>
