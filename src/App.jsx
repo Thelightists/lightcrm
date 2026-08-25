@@ -58,7 +58,7 @@ const BASE_TEAM = [
   { id: 10, name: "Tarana",  designation: "Design Team",               role: "design",      initials: "TA", color: "#7b6d8d" },
   { id: 11, name: "Shivam",  designation: "Admin & Asset Management",  role: "admin",       initials: "SV", color: "#3d5a80" },
   { id: 12, name: "Piyush",  designation: "Design Team",               role: "design",      initials: "PI", color: "#2e86ab" },
-  { id: 13, name: "Ar. Chaitrali Jagdale", designation: "Lighting Designer", role: "design", initials: "AC", color: "#e07a5f" },
+  { id: 13, name: "Chaitrali", designation: "Lighting Designer", role: "design", initials: "CJ", color: "#e07a5f" },
 ];
 
 // Team member colours for new additions
@@ -71,7 +71,10 @@ const loadTeam = () => {
     const base = BASE_TEAM.filter(m => !removed.includes(m.id));
     if (!extra) return base;
     const baseNames = new Set(BASE_TEAM.map(m => m.name.trim().toLowerCase()));
-    const extras = JSON.parse(extra).filter(m => !baseNames.has((m.name||"").trim().toLowerCase()));
+    // Also catch old name variants that may be in localStorage from before renaming
+    const extraVariants = new Set(["ar. chaitrali jagdale", "chaitrali jagdale", "chaitrali"]);
+    BASE_TEAM.forEach(m => extraVariants.add(m.name.trim().toLowerCase()));
+    const extras = JSON.parse(extra).filter(m => !extraVariants.has((m.name||"").trim().toLowerCase()));
     // Persist the cleaned list back so duplicates don't reappear
     if (extras.length !== JSON.parse(extra).length) {
       try { localStorage.setItem("crm_extra_members", JSON.stringify(extras)); } catch {}
@@ -353,7 +356,10 @@ export default function LightCRM() {
   const [orders, setOrdersRaw]       = useState([]);
   const [payments, setPaymentsRaw]   = useState([]);
   const [leaveRequests, setLeaveRequestsRaw] = useState([]);
-  const [leaveBalances, setLeaveBalancesRaw] = useState({}); // {memberId: {balance, lastAccrualMonth}}
+  const [leaveBalances, setLeaveBalancesRaw] = useState(() => {
+    // Seed from localStorage cache so balances survive sheet read failures
+    try { const c = localStorage.getItem("crm_leave_balances"); return c ? JSON.parse(c) : {}; } catch { return {}; }
+  });
   const [loading, setLoading]        = useState(true);
   const [saving, setSaving]          = useState("");
   const [drawerProject, setDrawerProject] = useState(null);
@@ -380,7 +386,11 @@ export default function LightCRM() {
         // LeaveBalances stored as one row per member: id = memberId, data = {balance, lastAccrualMonth}
         const balMap = {};
         fromRows(lvbRows).forEach(r => { balMap[r.id] = r; });
-        setLeaveBalancesRaw(balMap);
+        // Only update if sheet has meaningful data (at least one real balance entry)
+        if (Object.keys(balMap).length > 0) {
+          setLeaveBalancesRaw(balMap);
+          try { localStorage.setItem("crm_leave_balances", JSON.stringify(balMap)); } catch {}
+        }
       }
       setLastSync(new Date().toLocaleTimeString());
     } catch(e) { console.error("Load error", e); }
@@ -412,6 +422,8 @@ export default function LightCRM() {
       const next = typeof u === "function" ? u(prev) : u;
       const rows = Object.values(next); // array of {id, balance, lastAccrualMonth}
       writeSheet("LeaveBalances", toRows(rows)).finally(() => setSaving(""));
+      // Always keep localStorage in sync as backup cache
+      try { localStorage.setItem("crm_leave_balances", JSON.stringify(next)); } catch {}
       return next;
     });
   };
@@ -448,19 +460,32 @@ export default function LightCRM() {
   }, [loading]);
 
   // One-time bootstrap: if LeaveBalances sheet is completely empty (first ever run),
-  // initialise every non-director team member at 0 balance for the current month.
-  // Also initialises any new team members not yet in the balance sheet.
+  // initialise every non-director team member. Also initialises new team members.
+  // IMPORTANT: never resets existing balances — only fills in missing entries.
   useEffect(() => {
     if (loading) return;
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
     const isFullyEmpty = Object.keys(leaveBalances).length === 0;
+    // If fully empty, check localStorage cache before assuming it's a genuine first run
+    if (isFullyEmpty) {
+      try {
+        const cached = localStorage.getItem("crm_leave_balances");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Object.keys(parsed).length > 0) {
+            // Sheet returned empty but we have cached data — restore from cache & re-save to sheet
+            setLeaveBalances(parsed);
+            return;
+          }
+        }
+      } catch {}
+    }
     const init = { ...leaveBalances };
     let changed = false;
     TEAM.forEach(m => {
       if (m.role === "director") return;
       if (!init[m.id]) {
-        // Either first ever run, or a new team member not yet in the sheet
         init[m.id] = { id: m.id, balance: isFullyEmpty ? ACCRUAL_PER_MONTH : 0, lastAccrualMonth: currentMonthKey };
         changed = true;
       }
