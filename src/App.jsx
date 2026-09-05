@@ -919,6 +919,22 @@ function Dashboard({projects,leads,tasks,alerts,activeLeads,overdueFollowups,inT
 }
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
+// ─── CSV Export Utility ──────────────────────────────────────────────────────
+function exportToCSV(filename, rows) {
+  if (!rows || rows.length === 0) return;
+  const headers = Object.keys(rows[0]);
+  const escape = (v) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers.join(","), ...rows.map(r => headers.map(h => escape(r[h])).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects,isMobile=false}){
   const _mobile = isMobile || (typeof window !== "undefined" && window.innerWidth <= 768);
   const [filter,setFilter]=useState("all");
@@ -943,7 +959,14 @@ function ProjectsTab({projects,setDrawerProject,currentUser,setModal,setProjects
           </select>
           <SearchBar value={search} onChange={setSearch} placeholder="Search by client, architect…"/>
         </div>
-        <button onClick={()=>setModal({type:"newProject"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Project</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>exportToCSV(`Projects_${today()}.csv`, projects.map(p=>({
+            "Client":p.client,"Stage":p.stage,"Quoted Value":p.isQuoted?p.quotedValue:"","Order Value":p.isOrdered?p.orderValue:"",
+            "Assigned To":(p.assignedTo||[]).map(id=>getMember(id,TEAM)?.name||id).join("; "),
+            "Last Updated":p.lastUpdated||"","Closure Date":p.closureDate||"","Follow-up Date":p.followUpDate||"","Notes":p.notes||""
+          })))} style={{background:"#2d6a4f",color:"#fff",border:"none",borderRadius:7,padding:"8px 14px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>⬇ Export</button>
+          <button onClick={()=>setModal({type:"newProject"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ New Project</button>
+        </div>
       </div>
       <div style={{background:"#fff",borderRadius:10,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900,tableLayout:"fixed"}}>
@@ -1145,6 +1168,12 @@ function LeadsTab({leads,currentUser,setModal,setLeads}){
             <option value="">All Names</option>
             {[...new Set(leads.map(l=>l.name).filter(Boolean))].sort().map(n=><option key={n} value={n}>{n}</option>)}
           </select>
+          <button onClick={()=>exportToCSV(`Leads_${today()}.csv`, filtered.map(l=>({
+            "Name":l.name,"Firm":l.firm||"","City":l.city||"","Type":l.type||"","Source":l.source||"",
+            "Contact":l.contact||"","Email":l.email||"","Status":getLeadStatus(l),
+            "Meeting Status":l.meetingStatus||"","Follow-up Date":l.followUpDate||"",
+            "Assigned To":getMember(l.assignedTo,TEAM)?.name||"","Notes":l.notes||""
+          })))} style={{background:"#2d6a4f",color:"#fff",border:"none",borderRadius:7,padding:"8px 14px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>⬇ Export</button>
           <button onClick={()=>setModal({type:"newLead"})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Lead</button>
         </div>
       </div>
@@ -1295,7 +1324,20 @@ function QuotationsTab({quotations,projects,setQuotations,setModal,setDrawerProj
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10}}>
         <SearchBar value={search} onChange={setSearch} placeholder="Search client, supplier…"/>
-        <button onClick={()=>setModal({type:"newQuotation",onSave:(q)=>{setQuotations(qs=>[...qs,q])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Quotation</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{
+            const projRows = projQuotations.map(p=>({
+              "Type":"From Project","Client":p.client,"Supplier":"","Stage":p.stage,
+              "Quoted Value":p.isQuoted?p.quotedValue:"","Sent Date":"","Follow-up Date":p.followUpDate||"","Status":""
+            }));
+            const manualRows = quotations.map(q=>({
+              "Type":"Manual","Client":q.client,"Supplier":q.supplier||"","Stage":"",
+              "Quoted Value":q.value||"","Sent Date":q.sentDate||"","Follow-up Date":q.followUpDate||"","Status":q.status||""
+            }));
+            exportToCSV(`Quotations_${today()}.csv`, [...projRows,...manualRows]);
+          }} style={{background:"#2d6a4f",color:"#fff",border:"none",borderRadius:7,padding:"8px 14px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>⬇ Export</button>
+          <button onClick={()=>setModal({type:"newQuotation",onSave:(q)=>{setQuotations(qs=>[...qs,q])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Quotation</button>
+        </div>
       </div>
 
       {/* Auto-populated from Projects */}
@@ -1501,7 +1543,20 @@ function PaymentsTab({payments,orders,setPayments,currentUser,setModal}){
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{background:"#fff3cd",border:"1px solid #ffc107",borderRadius:8,padding:"8px 14px",fontSize:12,color:"#856404",flex:1,marginRight:12}}>🔒 Visible to Aman, Mohini, and Ram only</div>
-        <button onClick={()=>setModal({type:"newPayment",onSave:(p)=>{setPayments(ps=>[...ps,p])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Payment</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{
+            const rows = payments.flatMap(pay=>
+              pay.subPayments.length===0
+                ? [{"Client":pay.client,"Supplier":pay.supplier,"Currency":pay.currency,"Total Order Value":pay.totalAmount||"","Sub-Payment":"","Amount":"","Type":"","Date":"","SWIFT Ref":"","Status":"","Notes":pay.notes||""}]
+                : pay.subPayments.map(sp=>({
+                    "Client":pay.client,"Supplier":pay.supplier,"Currency":pay.currency,"Total Order Value":pay.totalAmount||"",
+                    "Sub-Payment":sp.id,"Amount":sp.amount,"Type":sp.type,"Date":sp.date||"","SWIFT Ref":sp.swiftRef||"","Status":sp.status||"","Notes":sp.notes||""
+                  }))
+            );
+            exportToCSV(`Payments_${today()}.csv`, rows);
+          }} style={{background:"#2d6a4f",color:"#fff",border:"none",borderRadius:7,padding:"8px 14px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>⬇ Export</button>
+          <button onClick={()=>setModal({type:"newPayment",onSave:(p)=>{setPayments(ps=>[...ps,p])}})} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"8px 16px",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"}}>+ New Payment</button>
+        </div>
       </div>
       {payments.filter(pay=>{
         if(!search)return true;
